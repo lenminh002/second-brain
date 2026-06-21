@@ -1,11 +1,11 @@
-import { PointerEvent, WheelEvent, useMemo, useState } from "react";
+import { MouseEvent, PointerEvent, WheelEvent, useEffect, useMemo, useState } from "react";
 import { GitBranch, RefreshCcw, RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import type { DragState, GraphEdge, GraphTransform, KnowledgeGraph, PositionedGraphNode } from "@/types";
+import type { DragState, GraphEdge, GraphNodePositions, GraphTransform, KnowledgeGraph, PositionedGraphNode } from "@/types";
 
 export function GraphView({
   graph,
@@ -18,6 +18,8 @@ export function GraphView({
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [transform, setTransform] = useState<GraphTransform>({ x: 0, y: 0, scale: 1 });
   const [dragState, setDragState] = useState<DragState | null>(null);
+  const [nodePositions, setNodePositions] = useState<GraphNodePositions>({});
+  const [suppressClickNodeId, setSuppressClickNodeId] = useState<string | null>(null);
 
   const adjacency = useMemo(() => {
     const neighbors = new Map<string, Set<string>>();
@@ -64,7 +66,23 @@ export function GraphView({
 
     return [...sourcePositions, ...conceptPositions];
   }, [adjacency.neighbors, graph.nodes]);
-  const byId = Object.fromEntries(positioned.map((node) => [node.id, node]));
+  useEffect(() => {
+    const currentIds = new Set(graph.nodes.map((node) => node.id));
+    setNodePositions((current) => {
+      const next = Object.fromEntries(Object.entries(current).filter(([nodeId]) => currentIds.has(nodeId)));
+      return Object.keys(next).length === Object.keys(current).length ? current : next;
+    });
+  }, [graph.nodes]);
+
+  const renderedNodes = useMemo<PositionedGraphNode[]>(
+    () =>
+      positioned.map((node) => ({
+        ...node,
+        ...nodePositions[node.id],
+      })),
+    [nodePositions, positioned],
+  );
+  const byId = Object.fromEntries(renderedNodes.map((node) => [node.id, node]));
   const activeNodeId = selectedNodeId || hoveredNodeId;
   const activeNeighbors = activeNodeId ? adjacency.neighbors.get(activeNodeId) || new Set<string>() : new Set<string>();
   const selectedNode = activeNodeId ? byId[activeNodeId] : null;
@@ -81,14 +99,15 @@ export function GraphView({
   function resetView() {
     setTransform({ x: 0, y: 0, scale: 1 });
     setSelectedNodeId(null);
+    setNodePositions({});
   }
 
   function fitGraph() {
-    if (!positioned.length) return;
-    const minX = Math.min(...positioned.map((node) => node.x));
-    const maxX = Math.max(...positioned.map((node) => node.x));
-    const minY = Math.min(...positioned.map((node) => node.y));
-    const maxY = Math.max(...positioned.map((node) => node.y));
+    if (!renderedNodes.length) return;
+    const minX = Math.min(...renderedNodes.map((node) => node.x));
+    const maxX = Math.max(...renderedNodes.map((node) => node.x));
+    const minY = Math.min(...renderedNodes.map((node) => node.y));
+    const maxY = Math.max(...renderedNodes.map((node) => node.y));
     const graphWidth = Math.max(maxX - minX, 1);
     const graphHeight = Math.max(maxY - minY, 1);
     const scale = Math.min(1.25, Math.max(0.55, Math.min(900 / graphWidth, 560 / graphHeight) * 0.75));
@@ -118,6 +137,7 @@ export function GraphView({
     }
     event.currentTarget.setPointerCapture(event.pointerId);
     setDragState({
+      mode: "pan",
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
@@ -128,17 +148,73 @@ export function GraphView({
 
   function onPointerMove(event: PointerEvent<SVGSVGElement>) {
     if (!dragState || dragState.pointerId !== event.pointerId) return;
-    setTransform((current) => ({
-      ...current,
-      x: dragState.originX + event.clientX - dragState.startX,
-      y: dragState.originY + event.clientY - dragState.startY,
-    }));
+    if (dragState.mode === "pan") {
+      setTransform((current) => ({
+        ...current,
+        x: dragState.originX + event.clientX - dragState.startX,
+        y: dragState.originY + event.clientY - dragState.startY,
+      }));
+      return;
+    }
+
+    const deltaX = (event.clientX - dragState.startX) / transform.scale;
+    const deltaY = (event.clientY - dragState.startY) / transform.scale;
+    const moved = dragState.moved || Math.hypot(event.clientX - dragState.startX, event.clientY - dragState.startY) > 4;
+    const FOLLOW = 0.45;
+    setNodePositions((current) => {
+      const next = {
+        ...current,
+        [dragState.nodeId]: { x: dragState.originX + deltaX, y: dragState.originY + deltaY },
+      };
+      for (const [neighborId, origin] of Object.entries(dragState.neighborOrigins)) {
+        next[neighborId] = { x: origin.x + deltaX * FOLLOW, y: origin.y + deltaY * FOLLOW };
+      }
+      return next;
+    });
+    if (moved !== dragState.moved) {
+      setDragState({ ...dragState, moved });
+    }
   }
 
   function onPointerUp(event: PointerEvent<SVGSVGElement>) {
     if (dragState?.pointerId === event.pointerId) {
+      if (dragState.mode === "node" && dragState.moved) {
+        setSuppressClickNodeId(dragState.nodeId);
+        setSelectedNodeId(dragState.nodeId);
+      }
       setDragState(null);
     }
+  }
+
+  function onNodePointerDown(event: PointerEvent<SVGGElement>, node: PositionedGraphNode) {
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const neighborIds = adjacency.neighbors.get(node.id) ?? new Set<string>();
+    const neighborOrigins: Record<string, { x: number; y: number }> = {};
+    for (const neighborId of neighborIds) {
+      const neighbor = byId[neighborId];
+      if (neighbor) neighborOrigins[neighborId] = { x: neighbor.x, y: neighbor.y };
+    }
+    setDragState({
+      mode: "node",
+      pointerId: event.pointerId,
+      nodeId: node.id,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: node.x,
+      originY: node.y,
+      moved: false,
+      neighborOrigins,
+    });
+  }
+
+  function onNodeClick(event: MouseEvent<SVGGElement>, nodeId: string) {
+    event.stopPropagation();
+    if (suppressClickNodeId === nodeId) {
+      setSuppressClickNodeId(null);
+      return;
+    }
+    setSelectedNodeId((current) => (current === nodeId ? null : nodeId));
   }
 
   if (!graph.nodes.length) {
@@ -225,19 +301,18 @@ export function GraphView({
                 </g>
               );
             })}
-            {positioned.map((node) => {
+            {renderedNodes.map((node) => {
               const active = isConnectedNode(node.id);
               const selected = activeNodeId === node.id;
+              const dragging = dragState?.mode === "node" && (dragState.nodeId === node.id || node.id in dragState.neighborOrigins);
               const radius = node.type === "source" ? 24 : 15;
               return (
                 <g
-                  className={cn("graph-node", node.type, active ? "is-active" : "is-dimmed", selected && "is-selected")}
+                  className={cn("graph-node", node.type, active ? "is-active" : "is-dimmed", selected && "is-selected", dragging && "is-dragging")}
                   data-graph-node="true"
                   key={node.id}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setSelectedNodeId((current) => (current === node.id ? null : node.id));
-                  }}
+                  onClick={(event) => onNodeClick(event, node.id)}
+                  onPointerDown={(event) => onNodePointerDown(event, node)}
                   onPointerEnter={() => setHoveredNodeId(node.id)}
                   onPointerLeave={() => setHoveredNodeId(null)}
                   transform={`translate(${node.x}, ${node.y})`}

@@ -1,6 +1,6 @@
-import type { AccountRecord, ApiError, Citation, KnowledgeGraph, PostRecord, SourceDetail, SourceRecord } from "@/types";
+import type { AccountRecord, ApiError, Citation, GraphContext, KnowledgeGraph, PostRecord, SourceDetail, SourceRecord, ToolCall } from "@/types";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 
 async function responseError(response: Response, fallback: string) {
   try {
@@ -56,7 +56,12 @@ export async function sendChatMessage(message: string) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ message }),
   });
-  const payload = (await response.json()) as { answer: string; citations?: Citation[] } & ApiError;
+  const payload = (await response.json()) as {
+    answer: string;
+    citations?: Citation[];
+    graph_context?: GraphContext[];
+    tool_calls?: ToolCall[];
+  } & ApiError;
   if (!response.ok) throw new Error(payload.detail || "Chat failed.");
   return payload;
 }

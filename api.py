@@ -14,7 +14,8 @@ load_dotenv()
 
 from embeddings import cosine_similarity, embed_text
 from ingestion import VideoIngestionDeferred, create_processing_source, process_source
-from knowledge_ai import answer_with_context
+from knowledge_ai import answer_with_context, answer_with_tools
+from storage import get_account as storage_get_account
 from storage import load_chunks, load_graph, load_posts, load_sources, upsert_account
 
 app = FastAPI(title="Personal Knowledge Base API", version="0.1.0")
@@ -38,7 +39,10 @@ MOCK_ACCOUNT = {
 
 
 def current_account() -> dict[str, str]:
-    return upsert_account(MOCK_ACCOUNT)
+    # Read first; only write when the account doesn't exist yet.  Calling
+    # upsert_account on every request caused an unnecessary write (get + set)
+    # on every single endpoint hit when using the Firestore backend.
+    return storage_get_account(MOCK_ACCOUNT["id"]) or upsert_account(MOCK_ACCOUNT)
 
 
 def _sort_newest(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -88,20 +92,34 @@ def _build_graph_context(
         concept_to_sources.setdefault(concept_id, set()).add(source_id)
 
     related_source_ids: set[str] = set()
+    graph_match_by_source_id: dict[str, dict[str, str]] = {}
     graph_context: list[dict[str, Any]] = []
-    for concept_id, source_ids in concept_to_sources.items():
+    for concept_id, source_ids in sorted(concept_to_sources.items()):
         if not source_ids.intersection(top_source_ids):
             continue
         neighbors = source_ids - top_source_ids
         related_source_ids.update(neighbors)
         concept_node = node_by_id.get(concept_id, {})
+        concept_label = str(concept_node.get("label", concept_id))
+        for source_id in sorted(neighbors):
+            graph_match_by_source_id.setdefault(
+                source_id,
+                {
+                    "matched_concept_id": concept_id,
+                    "matched_concept_label": concept_label,
+                },
+            )
         graph_context.append(
             {
                 "concept_id": concept_id,
-                "concept_label": concept_node.get("label", concept_id),
+                "concept_label": concept_label,
                 "source_ids": sorted(source_ids),
                 "source_titles": sorted(
                     source_title_by_id.get(source_id, source_id) for source_id in source_ids
+                ),
+                "expanded_source_ids": sorted(neighbors),
+                "expanded_source_titles": sorted(
+                    source_title_by_id.get(source_id, source_id) for source_id in neighbors
                 ),
             }
         )
@@ -123,7 +141,14 @@ def _build_graph_context(
             break
         chunk = first_chunk_by_source_id.get(source_id)
         if chunk:
-            extra_chunks.append({**chunk, "score": 0, "retrieval": "graph_neighbor"})
+            extra_chunks.append(
+                {
+                    **chunk,
+                    **graph_match_by_source_id.get(source_id, {}),
+                    "score": 0,
+                    "retrieval": "graph_neighbor",
+                }
+            )
             existing_chunk_ids.add(chunk.get("id"))
 
     return top_chunks + extra_chunks, graph_context[:8]
@@ -148,26 +173,114 @@ def _rank_chunks(
     ]
 
 
-def _chat_response(account_id: str, message: str) -> dict[str, Any]:
-    question_embedding = embed_text(message)
+def _citation_from_chunk(chunk: dict[str, Any]) -> dict[str, Any]:
+    citation = {
+        "source_id": chunk.get("source_id"),
+        "source_title": chunk.get("source_title"),
+        "section": chunk.get("section"),
+        "text": chunk.get("text"),
+        "score": chunk.get("score"),
+        "retrieval": chunk.get("retrieval", "vector"),
+    }
+    if chunk.get("matched_concept_id"):
+        citation["matched_concept_id"] = chunk.get("matched_concept_id")
+    if chunk.get("matched_concept_label"):
+        citation["matched_concept_label"] = chunk.get("matched_concept_label")
+    return citation
+
+
+def _search_knowledge_base(
+    account_id: str,
+    query: str,
+    limit: int = 5,
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+    question_embedding = embed_text(query)
     chunks = load_chunks(account_id, copy_result=False)
-    top_chunks = _rank_chunks(question_embedding, chunks)
+    top_chunks = _rank_chunks(question_embedding, chunks, limit=limit)
     expanded_chunks, graph_context = _build_graph_context(top_chunks, chunks, load_graph(account_id))
-    answer = answer_with_context(message, expanded_chunks, graph_context)
-    return {
-        "answer": answer,
-        "citations": [
+    citations = [_citation_from_chunk(chunk) for chunk in expanded_chunks]
+    result = {
+        "query": query,
+        "snippets": [
             {
+                "citation_index": index + 1,
                 "source_id": chunk.get("source_id"),
                 "source_title": chunk.get("source_title"),
                 "section": chunk.get("section"),
-                "text": chunk.get("text"),
+                "text": str(chunk.get("text", ""))[:1200],
                 "score": chunk.get("score"),
                 "retrieval": chunk.get("retrieval", "vector"),
+                "matched_concept_id": chunk.get("matched_concept_id"),
+                "matched_concept_label": chunk.get("matched_concept_label"),
             }
-            for chunk in expanded_chunks
+            for index, chunk in enumerate(expanded_chunks)
         ],
         "graph_context": graph_context,
+    }
+    return result, citations, graph_context
+
+
+def _get_source_detail(account_id: str, source_id: str) -> dict[str, Any]:
+    for source in load_sources(account_id):
+        if source.get("id") == source_id:
+            return {
+                "source_id": source.get("id"),
+                "title": source.get("title"),
+                "type": source.get("type"),
+                "summary": source.get("summary", ""),
+                "key_ideas": source.get("key_ideas", []),
+                "concepts": source.get("concepts", []),
+                "claims": source.get("claims", []),
+                "content": str(source.get("content", ""))[:6000],
+            }
+    raise ValueError("Source not found.")
+
+
+def _chat_response(account_id: str, message: str) -> dict[str, Any]:
+    _, citations, graph_context = _search_knowledge_base(account_id, message)
+    tool_calls: list[dict[str, str]] = []
+
+    def execute_tool(tool_name: str, tool_input: dict[str, Any]) -> dict[str, Any]:
+        nonlocal citations, graph_context
+        if tool_name == "search_knowledge_base":
+            query = str(tool_input.get("query") or message).strip() or message
+            result, citations, graph_context = _search_knowledge_base(account_id, query)
+            return result
+        if tool_name == "get_source_detail":
+            source_id = str(tool_input.get("source_id") or "").strip()
+            if not source_id:
+                raise ValueError("source_id is required.")
+            return _get_source_detail(account_id, source_id)
+        raise ValueError(f"Unknown tool: {tool_name}")
+
+    try:
+        tool_answer = answer_with_tools(message, execute_tool)
+        if isinstance(tool_answer, tuple):
+            answer, used_tools = tool_answer
+        else:
+            answer, used_tools = tool_answer, []
+        tool_calls = [{"name": name} for name in used_tools]
+    except ValueError:
+        top_chunks = [
+            {
+                "source_id": citation.get("source_id"),
+                "source_title": citation.get("source_title"),
+                "section": citation.get("section"),
+                "text": citation.get("text"),
+                "score": citation.get("score"),
+                "retrieval": citation.get("retrieval", "vector"),
+                "matched_concept_id": citation.get("matched_concept_id"),
+                "matched_concept_label": citation.get("matched_concept_label"),
+            }
+            for citation in citations
+        ]
+        answer = answer_with_context(message, top_chunks, graph_context)
+
+    return {
+        "answer": answer,
+        "citations": citations,
+        "graph_context": graph_context,
+        "tool_calls": tool_calls,
     }
 
 

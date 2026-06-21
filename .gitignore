@@ -8,3 +8,5 @@ frontend/dist/
 .env
 .env.local
 frontend/.env.local
+
+firebase-service-account.json

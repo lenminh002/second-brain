@@ -9,6 +9,17 @@ from storage_backends.base import StorageBackend
 from storage_backends.utils import coerce_graph, merge_graph
 
 
+def _seed_embeddings(texts: list[str]) -> list[list[float]]:
+    """Compute real embeddings for seed data so dimensions match live queries."""
+    try:
+        from embeddings import embed_texts
+        return embed_texts(texts)
+    except Exception:
+        # If embedding fails at seed time, return empty lists — chunks will be
+        # skipped by _rank_chunks but won't break anything.
+        return [[] for _ in texts]
+
+
 class MemoryStorageBackend(StorageBackend):
     def __init__(self) -> None:
         self._lock = threading.RLock()
@@ -17,7 +28,7 @@ class MemoryStorageBackend(StorageBackend):
         self.posts: dict[str, dict[str, Any]] = {}
         self.graphs: dict[str, dict[str, list[dict[str, Any]]]] = {}
         self.accounts: dict[str, dict[str, str]] = {}
-        if os.getenv("SKYWATCH_SEED_MOCK_DATA", "1") != "0":
+        if os.getenv("SECONDBRAIN_SEED_MOCK_DATA", "1") != "0":
             self._seed_mock_data()
 
     def _seed_mock_data(self) -> None:
@@ -82,6 +93,21 @@ class MemoryStorageBackend(StorageBackend):
                 "created_at": "2026-06-20T17:31:00+00:00",
             },
         }
+
+        # Compute embeddings using the real embedder so dimensions match live
+        # queries. Hardcoded 2-dim vectors caused chat to return zero citations
+        # because _rank_chunks skips chunks whose dim ≠ query dim.
+        rag_summary = self.sources["mock-source-rag"]["summary"]
+        attention_summary = self.sources["mock-source-attention"]["summary"]
+        try:
+            from embeddings import current_embedding_model
+            embeddings = _seed_embeddings([rag_summary, attention_summary])
+            model = current_embedding_model()
+        except Exception:
+            embeddings = [[], []]
+            model = "unknown"
+
+        rag_emb, attention_emb = embeddings[0], embeddings[1]
         self.chunks = {
             "mock-chunk-rag": {
                 "id": "mock-chunk-rag",
@@ -89,10 +115,10 @@ class MemoryStorageBackend(StorageBackend):
                 "source_id": "mock-source-rag",
                 "source_title": "GraphRAG Notes",
                 "section": "Summary",
-                "text": self.sources["mock-source-rag"]["summary"],
-                "embedding": [1.0, 0.0],
-                "embedding_model": "mock",
-                "embedding_dim": 2,
+                "text": rag_summary,
+                "embedding": rag_emb,
+                "embedding_model": model,
+                "embedding_dim": len(rag_emb),
             },
             "mock-chunk-attention": {
                 "id": "mock-chunk-attention",
@@ -100,10 +126,10 @@ class MemoryStorageBackend(StorageBackend):
                 "source_id": "mock-source-attention",
                 "source_title": "Attention Refresher",
                 "section": "Summary",
-                "text": self.sources["mock-source-attention"]["summary"],
-                "embedding": [0.8, 0.0],
-                "embedding_model": "mock",
-                "embedding_dim": 2,
+                "text": attention_summary,
+                "embedding": attention_emb,
+                "embedding_model": model,
+                "embedding_dim": len(attention_emb),
             },
         }
         self.graphs = {

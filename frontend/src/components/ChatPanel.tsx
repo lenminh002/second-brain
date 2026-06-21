@@ -1,5 +1,5 @@
 import { FormEvent } from "react";
-import { Bot, Loader2, MessageCircle } from "lucide-react";
+import { Bot, GitBranch, Loader2, MessageCircle } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -34,26 +34,62 @@ export function ChatPanel({
       <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-3 p-4">
           {chatLog.length ? (
-            chatLog.map((message, index) => (
-              <div
-                className={cn(
-                  "rounded-2xl border p-3 text-sm leading-6",
-                  message.role === "user" ? "ml-8 bg-primary text-primary-foreground" : "mr-8 bg-muted/45",
-                )}
-                key={`${message.role}-${index}`}
-              >
-                <p>{message.text}</p>
-                {!!message.citations?.length && (
-                  <div className="mt-3 flex flex-wrap gap-1">
-                    {message.citations.map((citation) => (
-                      <Badge key={`${citation.source_id}-${citation.section}`} variant="secondary">
-                        {citation.source_title} / {citation.section}
+            chatLog.map((message, index) => {
+              const graphConcepts = [
+                ...new Set((message.graphContext || []).map((item) => item.concept_label).filter(Boolean)),
+              ];
+              return (
+                <div
+                  className={cn(
+                    "rounded-2xl border p-3 text-sm leading-6",
+                    message.role === "user" ? "ml-8 bg-primary text-primary-foreground" : "mr-8 bg-muted/45",
+                  )}
+                  key={`${message.role}-${index}`}
+                >
+                  {!!message.toolCalls?.length && (
+                    <div className="mb-2 flex flex-wrap gap-1">
+                      {message.toolCalls.map((toolCall, toolIndex) => (
+                        <Badge key={`${toolCall.name}-${toolIndex}`} variant="outline">
+                          Using tool {toolCall.name}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                  {!!graphConcepts.length && (
+                    <div className="mb-2 flex flex-wrap gap-1">
+                      <Badge className="gap-1" variant="outline">
+                        <GitBranch className="h-3 w-3" />
+                        Expanded via graph concepts
                       </Badge>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))
+                      {graphConcepts.slice(0, 3).map((concept) => (
+                        <Badge key={concept} variant="secondary">
+                          {concept}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                  <p>{message.text}</p>
+                  {!!message.citations?.length && (
+                    <div className="mt-3 flex flex-wrap gap-1">
+                      {message.citations.map((citation, citationIndex) => {
+                        const isGraphNeighbor = citation.retrieval === "graph_neighbor";
+                        return (
+                          <Badge
+                            key={`${citation.source_id}-${citation.section}-${citationIndex}`}
+                            variant={isGraphNeighbor ? "outline" : "secondary"}
+                          >
+                            {isGraphNeighbor && citation.matched_concept_label
+                              ? `Graph: ${citation.matched_concept_label} - ${citation.source_title}`
+                              : citation.source_title}{" "}
+                            / {citation.section}
+                          </Badge>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })
           ) : (
             <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
               Ask what your saved knowledge says about a topic.

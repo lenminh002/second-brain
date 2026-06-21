@@ -62,6 +62,11 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
             data = payload.get("data", [])
             if not isinstance(data, list) or len(data) != len(batch):
                 raise ValueError("OpenAI embeddings response did not match the requested inputs.")
+            for item in data:
+                if not isinstance(item, dict) or "index" not in item or "embedding" not in item:
+                    raise ValueError(
+                        f"Malformed item in OpenAI embeddings response: {item!r}"
+                    )
             embeddings.extend(
                 item["embedding"] for item in sorted(data, key=lambda item: item["index"])
             )

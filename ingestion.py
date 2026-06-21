@@ -6,6 +6,7 @@ from typing import Any, Literal
 
 from embeddings import current_embedding_model, embed_texts
 from extractors import extract_pdf_text
+from google_drive import upload_pdf_to_drive
 from knowledge_ai import enrich_content
 from storage import (
     append_source,
@@ -18,8 +19,9 @@ ACTIVE_SOURCE_TYPES = {"note", "pdf"}
 VIDEO_DEFERRED_MESSAGE = "Video ingestion is currently disabled and to be fixed."
 INGEST_PROGRESS: dict[str, tuple[str, int]] = {
     "validating": ("Validating source", 5),
+    "uploading": ("Uploading original PDF", 15),
     "reading_text": ("Reading note text", 20),
-    "extracting": ("Extracting PDF text", 20),
+    "extracting": ("Extracting PDF text", 25),
     "enriching": ("Generating structured memory", 45),
     "embedding": ("Creating retrieval chunks", 70),
     "graphing": ("Updating knowledge graph", 90),
@@ -28,6 +30,7 @@ INGEST_PROGRESS: dict[str, tuple[str, int]] = {
 
 ProgressStage = Literal[
     "validating",
+    "uploading",
     "reading_text",
     "extracting",
     "enriching",
@@ -118,6 +121,18 @@ def _replace_source_artifacts(source: dict[str, Any], content: str, enrichment: 
     )
 
 
+def _attach_original_file_metadata(
+    source: dict[str, Any],
+    original_file: dict[str, Any],
+) -> None:
+    metadata = source.get("metadata")
+    if not isinstance(metadata, dict):
+        metadata = {}
+    metadata["original_file"] = original_file
+    source["metadata"] = metadata
+    source["source_url"] = original_file.get("drive_web_view_link")
+
+
 def validate_source_input(
     source_type: str,
     text: str | None = None,
@@ -184,13 +199,19 @@ def process_source(
             _set_progress(source, "reading_text")
             content = (text or "").strip()
         else:
+            pdf_bytes = file_bytes or b""
+            _set_progress(source, "uploading")
+            _attach_original_file_metadata(
+                source,
+                upload_pdf_to_drive(pdf_bytes, filename),
+            )
             _set_progress(source, "extracting")
-            content = extract_pdf_text(file_bytes or b"")
+            content = extract_pdf_text(pdf_bytes)
             if filename and source["title"] in {"Untitled source", filename}:
                 source["title"] = filename.rsplit(".", 1)[0]
 
         _set_progress(source, "enriching")
-        enrichment = enrich_content(source_type, source["title"], source_url, content)
+        enrichment = enrich_content(source_type, source["title"], source.get("source_url") or source_url, content)
 
         # Persist raw content and structured enrichment on the source record
         source["content"] = content

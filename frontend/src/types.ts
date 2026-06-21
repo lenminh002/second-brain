@@ -29,6 +29,17 @@ export type SourceRecord = {
   concepts?: string[];
   claims?: string[];
   questions?: string[];
+  metadata?: {
+    original_file?: {
+      provider?: "google_drive" | string;
+      drive_file_id?: string | null;
+      drive_web_view_link?: string | null;
+      drive_web_content_link?: string | null;
+      filename?: string | null;
+      mime_type?: string | null;
+      size_bytes?: number | null;
+    };
+  };
 };
 
 export type SourceDetail = SourceRecord & {
@@ -77,12 +88,25 @@ export type GraphTransform = {
   scale: number;
 };
 
+export type GraphNodePositions = Record<string, { x: number; y: number }>;
+
 export type DragState = {
+  mode: "pan";
   pointerId: number;
   startX: number;
   startY: number;
   originX: number;
   originY: number;
+} | {
+  mode: "node";
+  pointerId: number;
+  nodeId: string;
+  startX: number;
+  startY: number;
+  originX: number;
+  originY: number;
+  moved: boolean;
+  neighborOrigins: GraphNodePositions;
 };
 
 export type Citation = {
@@ -91,12 +115,30 @@ export type Citation = {
   section: string;
   text: string;
   score: number;
+  retrieval?: "vector" | "graph_neighbor";
+  matched_concept_id?: string;
+  matched_concept_label?: string;
+};
+
+export type GraphContext = {
+  concept_id: string;
+  concept_label: string;
+  source_ids: string[];
+  source_titles: string[];
+  expanded_source_ids?: string[];
+  expanded_source_titles?: string[];
+};
+
+export type ToolCall = {
+  name: string;
 };
 
 export type ChatMessage = {
   role: "user" | "assistant";
   text: string;
   citations?: Citation[];
+  graphContext?: GraphContext[];
+  toolCalls?: ToolCall[];
 };
 
 export type ApiError = {

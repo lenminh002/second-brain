@@ -1,3 +1,5 @@
+import { ExternalLink } from "lucide-react";
+
 import type { SourceDetail } from "@/types";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -23,8 +25,28 @@ function BulletList({ items }: { items: string[] }) {
 }
 
 export function SourceContent({ source }: { source: SourceDetail }) {
+  const originalFile = source.metadata?.original_file;
+  const originalFileLink = originalFile?.drive_web_view_link || source.source_url;
+
   return (
     <div className="space-y-2">
+      {originalFileLink && (
+        <Section title="Original File">
+          <a
+            className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold hover:bg-muted"
+            href={originalFileLink}
+            rel="noreferrer"
+            target="_blank"
+          >
+            <ExternalLink className="h-4 w-4" />
+            Open original PDF
+          </a>
+          {originalFile?.filename && (
+            <p className="mt-2 text-xs text-muted-foreground">{originalFile.filename}</p>
+          )}
+        </Section>
+      )}
+
       {source.summary && (
         <Section title="Summary">
           <p className="text-sm leading-relaxed">{source.summary}</p>

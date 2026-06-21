@@ -3,16 +3,21 @@ from __future__ import annotations
 import os
 import threading
 from copy import deepcopy
+from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
+
 from storage_backends import FirestoreStorageBackend, MemoryStorageBackend, StorageBackend
+
+load_dotenv(dotenv_path=Path.cwd() / ".env")
 
 _LOCK = threading.RLock()
 _BACKEND: StorageBackend | None = None
 
 
 def _create_backend() -> StorageBackend:
-    if os.getenv("SKYWATCH_STORAGE_BACKEND") == "firestore":
+    if os.getenv("SECONDBRAIN_STORAGE_BACKEND") == "firestore":
         return FirestoreStorageBackend()
     return MemoryStorageBackend()
 

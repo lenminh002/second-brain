@@ -15,8 +15,8 @@ TEST_ACCOUNT_ID = "mock-user"
 def _patch_storage(tmp_path: Path, monkeypatch) -> None:
     import storage
 
-    monkeypatch.setenv("SKYWATCH_STORAGE_BACKEND", "memory")
-    monkeypatch.setenv("SKYWATCH_SEED_MOCK_DATA", "0")
+    monkeypatch.setenv("SECONDBRAIN_STORAGE_BACKEND", "memory")
+    monkeypatch.setenv("SECONDBRAIN_SEED_MOCK_DATA", "0")
     storage.reset_backend_for_tests()
 
 
@@ -142,6 +142,18 @@ def test_invalid_note_does_not_persist_source(tmp_path: Path, monkeypatch) -> No
 def test_pdf_ingestion_uses_extractor(tmp_path: Path, monkeypatch) -> None:
     _patch_storage(tmp_path, monkeypatch)
     monkeypatch.setattr("ingestion.extract_pdf_text", lambda _: "A paper about graph retrieval.")
+    monkeypatch.setattr(
+        "ingestion.upload_pdf_to_drive",
+        lambda file_bytes, filename: {
+            "provider": "google_drive",
+            "drive_file_id": "drive-file-1",
+            "drive_web_view_link": "https://drive.google.com/file/d/drive-file-1/view",
+            "drive_web_content_link": "https://drive.google.com/uc?id=drive-file-1",
+            "filename": filename,
+            "mime_type": "application/pdf",
+            "size_bytes": len(file_bytes),
+        },
+    )
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
@@ -162,6 +174,58 @@ def test_pdf_ingestion_uses_extractor(tmp_path: Path, monkeypatch) -> None:
     assert detail["status"] == "ready"
     assert detail["progress_percent"] == 100
     assert "graph retrieval" in detail["content"]
+    assert detail["source_url"] == "https://drive.google.com/file/d/drive-file-1/view"
+    assert detail["metadata"]["original_file"] == {
+        "provider": "google_drive",
+        "drive_file_id": "drive-file-1",
+        "drive_web_view_link": "https://drive.google.com/file/d/drive-file-1/view",
+        "drive_web_content_link": "https://drive.google.com/uc?id=drive-file-1",
+        "filename": "paper.pdf",
+        "mime_type": "application/pdf",
+        "size_bytes": len(b"%PDF-1.4 fake"),
+    }
+
+
+def test_pdf_drive_upload_failure_records_failed_source_without_artifacts(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import storage
+
+    _patch_storage(tmp_path, monkeypatch)
+
+    def fail_upload(*_: object) -> dict:
+        raise RuntimeError("Google Drive upload failed: folder is not shared")
+
+    def fail_extract(*_: object) -> str:
+        raise AssertionError("PDF extraction should not run if Drive upload fails.")
+
+    monkeypatch.setattr("ingestion.upload_pdf_to_drive", fail_upload)
+    monkeypatch.setattr("ingestion.extract_pdf_text", fail_extract)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    import api
+
+    importlib.reload(api)
+    client = TestClient(api.app)
+
+    response = client.post(
+        "/sources",
+        files={"file": ("paper.pdf", b"%PDF-1.4 fake", "application/pdf")},
+        data={"type": "pdf", "title": "Graph Paper"},
+    )
+
+    assert response.status_code == 200
+    source = response.json()
+    detail = client.get(f"/sources/{source['id']}").json()
+    assert detail["status"] == "failed"
+    assert "Google Drive upload failed" in detail["error"]
+    assert detail["progress_stage"] == "uploading"
+    assert detail["progress_percent"] == 15
+    assert storage.load_chunks(TEST_ACCOUNT_ID) == []
+    assert client.get("/posts").json() == []
+    assert client.get("/graph").json() == {"nodes": [], "edges": []}
 
 
 def test_ingestion_failure_records_failed_source_with_progress(
@@ -277,6 +341,69 @@ def test_chat_returns_answer_and_citations(tmp_path: Path, monkeypatch) -> None:
     assert payload["citations"][0]["source_title"] == "Retrieval"
 
 
+def test_chat_agent_tools_search_and_fetch_source_detail(tmp_path: Path, monkeypatch) -> None:
+    import storage
+
+    _patch_storage(tmp_path, monkeypatch)
+    storage.save_sources(
+        TEST_ACCOUNT_ID,
+        [
+            {
+                "id": "source-a",
+                "type": "note",
+                "title": "Retrieval Detail",
+                "summary": "Retrieval narrows context before answering.",
+                "key_ideas": ["Search first"],
+                "concepts": ["Retrieval"],
+                "claims": ["Tool search keeps answers grounded."],
+                "content": "Full source content about retrieval and citations.",
+            }
+        ],
+    )
+    storage.save_chunks(
+        TEST_ACCOUNT_ID,
+        [
+            {
+                "id": "chunk-a",
+                "source_id": "source-a",
+                "source_title": "Retrieval Detail",
+                "section": "Notes",
+                "text": "Tool search returns compact snippets before final answers.",
+                "embedding": [1.0, 0.0],
+            }
+        ],
+    )
+    storage.save_graph(TEST_ACCOUNT_ID, {"nodes": [], "edges": []})
+
+    import api
+
+    importlib.reload(api)
+    monkeypatch.setattr(api, "embed_text", lambda _: [1.0, 0.0])
+
+    def fake_answer_with_tools(message, execute_tool):
+        search_result = execute_tool("search_knowledge_base", {"query": message})
+        detail = execute_tool(
+            "get_source_detail",
+            {"source_id": search_result["snippets"][0]["source_id"]},
+        )
+        return f"{detail['summary']} [1]", ["search_knowledge_base", "get_source_detail"]
+
+    monkeypatch.setattr(api, "answer_with_tools", fake_answer_with_tools)
+    client = TestClient(api.app)
+
+    response = client.post("/chat", json={"message": "How should retrieval work?"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["answer"] == "Retrieval narrows context before answering. [1]"
+    assert payload["citations"][0]["source_id"] == "source-a"
+    assert payload["citations"][0]["retrieval"] == "vector"
+    assert payload["tool_calls"] == [
+        {"name": "search_knowledge_base"},
+        {"name": "get_source_detail"},
+    ]
+
+
 def test_chat_expands_context_with_graph_neighbors(tmp_path: Path, monkeypatch) -> None:
     import storage
 
@@ -300,6 +427,14 @@ def test_chat_expands_context_with_graph_neighbors(tmp_path: Path, monkeypatch) 
                 "source_title": "Graph Note",
                 "section": "Notes",
                 "text": "GraphRAG follows related concepts to bring connected sources into context.",
+                "embedding": [-1.0, 0.0],
+            },
+            {
+                "id": "chunk-b-extra",
+                "source_id": "source-b",
+                "source_title": "Graph Note",
+                "section": "Summary",
+                "text": "A duplicate source chunk should not create another graph-neighbor citation.",
                 "embedding": [-1.0, 0.0],
             },
             {
@@ -371,7 +506,14 @@ def test_chat_expands_context_with_graph_neighbors(tmp_path: Path, monkeypatch) 
     payload = response.json()
     assert any(citation["source_title"] == "Graph Note" for citation in payload["citations"])
     assert any(citation.get("retrieval") == "graph_neighbor" for citation in payload["citations"])
+    graph_citations = [
+        citation for citation in payload["citations"] if citation.get("retrieval") == "graph_neighbor"
+    ]
+    assert len([citation for citation in graph_citations if citation["source_id"] == "source-b"]) == 1
+    assert graph_citations[0]["matched_concept_id"] == "concept-retrieval"
+    assert graph_citations[0]["matched_concept_label"] == "Retrieval"
     assert payload["graph_context"][0]["concept_label"] == "Retrieval"
+    assert payload["graph_context"][0]["expanded_source_ids"] == ["source-b"]
 
 
 def test_chat_graphrag_falls_back_without_graph(tmp_path: Path, monkeypatch) -> None:
@@ -456,9 +598,11 @@ def test_chat_skips_chunks_with_incompatible_embedding_dimensions(
 def test_firestore_backend_requires_credentials(tmp_path: Path, monkeypatch) -> None:
     import storage
 
-    monkeypatch.setenv("SKYWATCH_STORAGE_BACKEND", "firestore")
-    monkeypatch.delenv("FIREBASE_SERVICE_ACCOUNT_FILE", raising=False)
-    monkeypatch.delenv("GOOGLE_APPLICATION_CREDENTIALS", raising=False)
+    monkeypatch.setenv("SECONDBRAIN_STORAGE_BACKEND", "firestore")
+    monkeypatch.setenv("FIREBASE_SERVICE_ACCOUNT_FILE", "")
+    monkeypatch.setenv("FIREBASE_SERVICE_ACCOUNT_JSON", "")
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", "")
+    monkeypatch.setenv("FIRESTORE_EMULATOR_HOST", "")
     storage.reset_backend_for_tests()
 
     with pytest.raises(
@@ -482,7 +626,7 @@ def test_firebase_admin_app_initialization_is_thread_safe(tmp_path: Path, monkey
             return app
         raise ValueError("missing")
 
-    def initialize_app(credential=None) -> object:
+    def initialize_app(credential=None, options=None) -> object:
         calls["initialize"] += 1
         if calls["initialize"] > 1:
             raise ValueError("duplicate")
@@ -503,3 +647,204 @@ def test_firebase_admin_app_initialization_is_thread_safe(tmp_path: Path, monkey
 
     assert results == [app, app]
     assert calls["initialize"] == 1
+
+
+def test_firebase_admin_app_accepts_inline_service_account_json(monkeypatch) -> None:
+    import firebase_admin_app
+
+    calls: dict[str, object] = {}
+    fake_firebase_admin = types.ModuleType("firebase_admin")
+
+    def certificate(value: object) -> str:
+        calls["certificate"] = value
+        return "cert"
+
+    fake_credentials = types.SimpleNamespace(Certificate=certificate)
+    app = object()
+
+    def get_app() -> object:
+        raise ValueError("missing")
+
+    def initialize_app(credential=None, options=None) -> object:
+        calls["credential"] = credential
+        calls["options"] = options
+        return app
+
+    fake_firebase_admin.get_app = get_app
+    fake_firebase_admin.initialize_app = initialize_app
+    monkeypatch.setitem(sys.modules, "firebase_admin", fake_firebase_admin)
+    monkeypatch.setitem(sys.modules, "firebase_admin.credentials", fake_credentials)
+    monkeypatch.setenv(
+        "FIREBASE_SERVICE_ACCOUNT_JSON",
+        '{"project_id":"secondbrain-test","client_email":"test@example.com"}',
+    )
+    monkeypatch.setenv("FIREBASE_PROJECT_ID", "secondbrain-test")
+    monkeypatch.delenv("FIREBASE_SERVICE_ACCOUNT_FILE", raising=False)
+    monkeypatch.delenv("GOOGLE_APPLICATION_CREDENTIALS", raising=False)
+
+    importlib.reload(firebase_admin_app)
+
+    assert firebase_admin_app.get_firebase_admin_app(require_credentials=True) is app
+    assert calls["certificate"] == {
+        "project_id": "secondbrain-test",
+        "client_email": "test@example.com",
+    }
+    assert calls["credential"] == "cert"
+    assert calls["options"] == {"projectId": "secondbrain-test"}
+
+
+def test_firebase_admin_app_allows_firestore_emulator(monkeypatch) -> None:
+    import firebase_admin_app
+
+    calls: dict[str, object] = {}
+    fake_firebase_admin = types.ModuleType("firebase_admin")
+    fake_credentials = types.SimpleNamespace(Certificate=lambda value: value)
+    app = object()
+
+    def get_app() -> object:
+        raise ValueError("missing")
+
+    def initialize_app(credential=None, options=None) -> object:
+        calls["credential"] = credential
+        calls["options"] = options
+        return app
+
+    fake_firebase_admin.get_app = get_app
+    fake_firebase_admin.initialize_app = initialize_app
+    monkeypatch.setitem(sys.modules, "firebase_admin", fake_firebase_admin)
+    monkeypatch.setitem(sys.modules, "firebase_admin.credentials", fake_credentials)
+    monkeypatch.setenv("SECONDBRAIN_STORAGE_BACKEND", "firestore")
+    monkeypatch.setenv("FIRESTORE_EMULATOR_HOST", "127.0.0.1:8080")
+    monkeypatch.setenv("FIREBASE_PROJECT_ID", "secondbrain-local")
+    monkeypatch.delenv("FIREBASE_SERVICE_ACCOUNT_JSON", raising=False)
+    monkeypatch.delenv("FIREBASE_SERVICE_ACCOUNT_FILE", raising=False)
+    monkeypatch.delenv("GOOGLE_APPLICATION_CREDENTIALS", raising=False)
+
+    importlib.reload(firebase_admin_app)
+
+    assert firebase_admin_app.get_firebase_admin_app(require_credentials=True) is app
+    assert calls["credential"] is None
+    assert calls["options"] == {"projectId": "secondbrain-local"}
+
+
+class _FakeFirestoreSnapshot:
+    def __init__(self, reference: "_FakeFirestoreDocument", data: dict | None) -> None:
+        self.reference = reference
+        self._data = data
+        self.exists = data is not None
+
+    def to_dict(self) -> dict | None:
+        return dict(self._data) if self._data is not None else None
+
+
+class _FakeFirestoreDocument:
+    def __init__(self, db: "_FakeFirestoreDb", collection_name: str, document_id: str) -> None:
+        self._db = db
+        self._collection_name = collection_name
+        self._document_id = document_id
+
+    def get(self) -> _FakeFirestoreSnapshot:
+        data = self._db.records.get(self._collection_name, {}).get(self._document_id)
+        return _FakeFirestoreSnapshot(self, data)
+
+    def set(self, data: dict) -> None:
+        self._db.records.setdefault(self._collection_name, {})[self._document_id] = dict(data)
+
+    def delete(self) -> None:
+        self._db.records.setdefault(self._collection_name, {}).pop(self._document_id, None)
+
+
+class _FakeFirestoreQuery:
+    def __init__(self, db: "_FakeFirestoreDb", collection_name: str, filters: list[tuple[str, object]]) -> None:
+        self._db = db
+        self._collection_name = collection_name
+        self._filters = filters
+
+    def where(self, field: str, operator: str, value: object) -> "_FakeFirestoreQuery":
+        assert operator == "=="
+        return _FakeFirestoreQuery(self._db, self._collection_name, self._filters + [(field, value)])
+
+    def stream(self) -> list[_FakeFirestoreSnapshot]:
+        snapshots: list[_FakeFirestoreSnapshot] = []
+        for document_id, data in self._db.records.get(self._collection_name, {}).items():
+            if all(data.get(field) == value for field, value in self._filters):
+                reference = _FakeFirestoreDocument(self._db, self._collection_name, document_id)
+                snapshots.append(_FakeFirestoreSnapshot(reference, data))
+        return snapshots
+
+
+class _FakeFirestoreCollection:
+    def __init__(self, db: "_FakeFirestoreDb", collection_name: str) -> None:
+        self._db = db
+        self._collection_name = collection_name
+
+    def document(self, document_id: str) -> _FakeFirestoreDocument:
+        return _FakeFirestoreDocument(self._db, self._collection_name, document_id)
+
+    def where(self, field: str, operator: str, value: object) -> _FakeFirestoreQuery:
+        assert operator == "=="
+        return _FakeFirestoreQuery(self._db, self._collection_name, [(field, value)])
+
+
+class _FakeFirestoreDb:
+    def __init__(self) -> None:
+        self.records: dict[str, dict[str, dict]] = {}
+
+    def collection(self, name: str) -> _FakeFirestoreCollection:
+        return _FakeFirestoreCollection(self, name)
+
+
+def test_note_ingestion_persists_artifacts_to_firestore(monkeypatch) -> None:
+    import ingestion
+    import storage
+    from storage_backends.firestore import FirestoreStorageBackend
+
+    fake_db = _FakeFirestoreDb()
+    monkeypatch.setenv("SECONDBRAIN_STORAGE_BACKEND", "firestore")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(FirestoreStorageBackend, "_build_client", lambda _: fake_db)
+    monkeypatch.setattr(
+        ingestion,
+        "enrich_content",
+        lambda *_: {
+            "summary": "Firestore stores the ingested note.",
+            "key_ideas": ["Persist source", "Persist chunks"],
+            "concepts": ["Firestore", "Ingestion"],
+            "claims": ["Ingestion writes all artifacts."],
+            "questions": ["Which collections are updated?"],
+            "social_post": "Ingestion now persists artifacts to Firestore.",
+        },
+    )
+    monkeypatch.setattr(ingestion, "embed_texts", lambda texts: [[1.0, 0.0] for _ in texts])
+    storage.reset_backend_for_tests()
+
+    source = ingestion.ingest_source(
+        account_id=TEST_ACCOUNT_ID,
+        source_type="note",
+        title="Firebase Check",
+        text="This note should be stored through the Firestore backend.",
+    )
+
+    assert source["status"] == "ready"
+    stored_source = fake_db.records["sources"][source["id"]]
+    assert stored_source["status"] == "ready"
+    assert stored_source["progress_stage"] == "complete"
+    assert stored_source["content"] == "This note should be stored through the Firestore backend."
+    assert stored_source["summary"] == "Firestore stores the ingested note."
+
+    chunks = list(fake_db.records["chunks"].values())
+    assert chunks
+    assert {chunk["account_id"] for chunk in chunks} == {TEST_ACCOUNT_ID}
+    assert {chunk["source_id"] for chunk in chunks} == {source["id"]}
+    assert all(chunk["embedding"] == [1.0, 0.0] for chunk in chunks)
+
+    posts = list(fake_db.records["posts"].values())
+    assert len(posts) == 1
+    assert posts[0]["account_id"] == TEST_ACCOUNT_ID
+    assert posts[0]["source_id"] == source["id"]
+    assert posts[0]["body"] == "Ingestion now persists artifacts to Firestore."
+
+    graph = fake_db.records["graphs"][TEST_ACCOUNT_ID]
+    assert graph["account_id"] == TEST_ACCOUNT_ID
+    assert {"source": f"source-{source['id']}", "target": "concept-firestore", "relation": "mentions"} in graph["edges"]

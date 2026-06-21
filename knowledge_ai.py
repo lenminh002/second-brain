@@ -3,16 +3,57 @@ from __future__ import annotations
 import json
 import os
 import re
+from collections.abc import Callable
 from typing import Any
 
 from anthropic import Anthropic
 
 MODEL_NAME = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6")
+MAX_AGENT_TURNS = 3
+
+CHAT_TOOLS = [
+    {
+        "name": "search_knowledge_base",
+        "description": "Search the user's saved knowledge base for relevant notes and graph-connected context.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The search query to run against saved knowledge.",
+                }
+            },
+            "required": ["query"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "get_source_detail",
+        "description": "Fetch the full content and enrichment fields for one saved source by source_id.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "source_id": {
+                    "type": "string",
+                    "description": "The exact source_id returned by search_knowledge_base.",
+                }
+            },
+            "required": ["source_id"],
+            "additionalProperties": False,
+        },
+    },
+]
 
 
 def _strip_code_fence(text: str) -> str:
+    """Extract the first fenced JSON block, or return the raw text.
+
+    Previously anchored with $ so prose *around* a fenced block ("Here is the
+    JSON: ```{...}```") was not stripped, causing json.loads to fail.  Now we
+    search for the first fenced block anywhere in the response.
+    """
     stripped = text.strip()
-    fenced = re.match(r"^```(?:json)?\s*(.*?)\s*```$", stripped, flags=re.DOTALL | re.IGNORECASE)
+    fenced = re.search(r"```(?:json)?\s*(.*?)\s*```", stripped, flags=re.DOTALL | re.IGNORECASE)
     return fenced.group(1).strip() if fenced else stripped
 
 
@@ -75,26 +116,32 @@ Content:
 """.strip()
 
     client = Anthropic(api_key=api_key)
-    message = client.messages.create(
-        model=MODEL_NAME,
-        max_tokens=1800,
-        temperature=0.2,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    response_text = "".join(
-        block.text for block in message.content if getattr(block, "type", None) == "text"
-    )
-    parsed = json.loads(_strip_code_fence(response_text))
-    if not isinstance(parsed, dict):
-        raise ValueError("Claude enrichment response was not a JSON object.")
+    try:
+        message = client.messages.create(
+            model=MODEL_NAME,
+            max_tokens=1800,
+            temperature=0.2,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        response_text = "".join(
+            block.text for block in message.content if getattr(block, "type", None) == "text"
+        )
+        parsed = json.loads(_strip_code_fence(response_text))
+        if not isinstance(parsed, dict):
+            raise ValueError("Claude enrichment response was not a JSON object.")
+    except Exception:
+        # Malformed / non-JSON model output used to propagate here and mark the
+        # entire source as failed.  Degrade gracefully to the rule-based fallback.
+        return _fallback_enrichment(title, content)
+
+    fallback = _fallback_enrichment(title, content)
     return {
-        "summary": str(parsed.get("summary", "")).strip() or _fallback_enrichment(title, content)["summary"],
+        "summary": str(parsed.get("summary", "")).strip() or fallback["summary"],
         "key_ideas": _as_string_list(parsed.get("key_ideas")),
         "concepts": _as_string_list(parsed.get("concepts")),
         "claims": _as_string_list(parsed.get("claims")),
         "questions": _as_string_list(parsed.get("questions")),
-        "social_post": str(parsed.get("social_post", "")).strip()
-        or _fallback_enrichment(title, content)["social_post"],
+        "social_post": str(parsed.get("social_post", "")).strip() or fallback["social_post"],
     }
 
 
@@ -141,3 +188,106 @@ Graph context:
         messages=[{"role": "user", "content": prompt}],
     )
     return "".join(block.text for block in response.content if getattr(block, "type", None) == "text").strip()
+
+
+def _message_content_to_params(content: Any) -> list[dict[str, Any]]:
+    params: list[dict[str, Any]] = []
+    for block in content:
+        if hasattr(block, "model_dump"):
+            params.append(block.model_dump(exclude_none=True))
+        else:
+            params.append(dict(block))
+    return params
+
+
+def _text_from_content(content: Any) -> str:
+    return "".join(
+        block.text for block in content if getattr(block, "type", None) == "text"
+    ).strip()
+
+
+def answer_with_tools(
+    message: str,
+    execute_tool: Callable[[str, dict[str, Any]], dict[str, Any]],
+) -> tuple[str, list[str]]:
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise ValueError("ANTHROPIC_API_KEY is required for tool-based answers.")
+
+    client = Anthropic(api_key=api_key)
+    messages: list[dict[str, Any]] = [{"role": "user", "content": message}]
+    used_tools: list[str] = []
+    system = """
+You are a personal assistant that answers only from the user's saved knowledge base.
+You must use tool results as your source of truth. If the saved context is insufficient,
+say what is missing. Cite sources inline with the citation indexes from tool results,
+like [1].
+""".strip()
+
+    for turn_index in range(MAX_AGENT_TURNS):
+        response = client.messages.create(
+            model=MODEL_NAME,
+            max_tokens=1200,
+            temperature=0.1,
+            system=system,
+            tools=CHAT_TOOLS,
+            tool_choice={
+                "type": "tool",
+                "name": "search_knowledge_base",
+            }
+            if turn_index == 0
+            else {"type": "auto"},
+            messages=messages,
+        )
+        messages.append(
+            {"role": "assistant", "content": _message_content_to_params(response.content)}
+        )
+        tool_uses = [
+            block for block in response.content if getattr(block, "type", None) == "tool_use"
+        ]
+        if not tool_uses:
+            return _text_from_content(response.content), used_tools
+
+        tool_results: list[dict[str, Any]] = []
+        for tool_use in tool_uses:
+            tool_name = str(getattr(tool_use, "name", ""))
+            tool_input = getattr(tool_use, "input", {}) or {}
+            if tool_name:
+                used_tools.append(tool_name)
+            try:
+                result = execute_tool(tool_name, dict(tool_input))
+                tool_results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tool_use.id,
+                        "content": json.dumps(result),
+                    }
+                )
+            except Exception as exc:
+                tool_results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tool_use.id,
+                        "is_error": True,
+                        "content": str(exc),
+                    }
+                )
+        messages.append({"role": "user", "content": tool_results})
+
+    final_response = client.messages.create(
+        model=MODEL_NAME,
+        max_tokens=800,
+        temperature=0.1,
+        system=system,
+        messages=messages
+        + [
+            {
+                "role": "user",
+                "content": (
+                    "Answer now using the tool results already provided. If they are "
+                    "insufficient, say what saved context is missing."
+                ),
+            }
+        ],
+    )
+    return _text_from_content(final_response.content), used_tools

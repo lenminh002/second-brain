@@ -127,7 +127,16 @@ export default function App() {
     setChatLog((current) => [...current, { role: "user", text: message }]);
     try {
       const payload = await sendChatMessage(message);
-      setChatLog((current) => [...current, { role: "assistant", text: payload.answer, citations: payload.citations || [] }]);
+      setChatLog((current) => [
+        ...current,
+        {
+          role: "assistant",
+          text: payload.answer,
+          citations: payload.citations || [],
+          graphContext: payload.graph_context || [],
+          toolCalls: payload.tool_calls || [],
+        },
+      ]);
     } catch (error: unknown) {
       setChatLog((current) => [...current, { role: "assistant", text: errorMessage(error) }]);
     } finally {

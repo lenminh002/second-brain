@@ -111,6 +111,9 @@ button:disabled,
 .graph-edge line {
   stroke: hsl(215 20% 70%);
   stroke-width: 1.8;
+  transition:
+    stroke 140ms ease,
+    stroke-width 140ms ease;
 }
 
 .graph-edge.is-active line {
@@ -132,13 +135,21 @@ button:disabled,
   stroke-width: 4px;
   text-anchor: middle;
   text-transform: uppercase;
+  transition:
+    x 140ms ease,
+    y 140ms ease;
 }
 
 .graph-node {
   cursor: pointer;
   transition:
     opacity 140ms ease,
-    transform 140ms ease;
+    transform 180ms ease;
+}
+
+.graph-node.is-dragging {
+  cursor: grabbing;
+  transition: opacity 140ms ease;
 }
 
 .graph-node circle {
