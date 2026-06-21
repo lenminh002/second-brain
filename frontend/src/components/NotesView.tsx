@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BookOpen, FileText, Pencil } from "lucide-react";
+import { BookOpen, FileText, Pencil, Bot } from "lucide-react";
 
 import { GraphView } from "@/components/GraphView";
 import { SourceContent } from "@/components/SourceContent";
@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Drawer,
   DrawerClose,
@@ -37,6 +38,8 @@ export function NotesView({
   setSelectedSourceId,
   setSelectedSourceDetail,
   sourcesByType,
+  sidebarTab,
+  setSidebarTab,
 }: {
   chatPanel: React.ReactNode;
   conceptCount: number;
@@ -52,6 +55,8 @@ export function NotesView({
   setSelectedSourceId: (id: string) => void;
   setSelectedSourceDetail: (source: SourceDetail) => void;
   sourcesByType: Record<SourceType, SourceRecord[]>;
+  sidebarTab: "chat" | "vault";
+  setSidebarTab: (tab: "chat" | "vault") => void;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -101,6 +106,30 @@ export function NotesView({
   return (
     <main className="min-h-[calc(100vh-74px)] min-w-0 border-r @container">
       <section className="h-[calc(100vh-74px)] min-w-0 flex flex-col">
+        {/* Desktop header to switch between Vault and AI Chat */}
+        <div className="hidden lg:flex h-14 items-center justify-between border-b px-6 shrink-0 bg-background/50 backdrop-blur">
+          <h1 className="font-bold">Memories</h1>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                onClick={() => setSidebarTab(sidebarTab === "vault" ? "chat" : "vault")}
+                size="icon"
+                variant="outline"
+                className="h-9 w-9"
+              >
+                {sidebarTab === "vault" ? (
+                  <Bot className="h-4 w-4" />
+                ) : (
+                  <FileText className="h-4 w-4" />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {sidebarTab === "vault" ? "Switch to Librarian Chat" : "Switch to Vault"}
+            </TooltipContent>
+          </Tooltip>
+        </div>
+
         {/* Mobile-only header to open the Vault in a drawer */}
         <div className="flex items-center justify-between border-b px-6 py-3 lg:hidden shrink-0 bg-background/50 backdrop-blur">
           <div className="flex items-center gap-2 font-bold text-sm">

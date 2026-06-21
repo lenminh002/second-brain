@@ -44,6 +44,7 @@ function AuthenticatedApp() {
   const [notesMode, setNotesMode] = useState<NotesMode>("note");
   const [isIngestOpen, setIsIngestOpen] = useState(false);
   const isSidebarMinimized = false;
+  const [memoriesSidebarTab, setMemoriesSidebarTab] = useState<"chat" | "vault">("vault");
 
   const {
     account,
@@ -189,6 +190,8 @@ function AuthenticatedApp() {
               setSelectedSourceId={setSelectedSourceId}
               setSelectedSourceDetail={setSelectedSourceDetail}
               sourcesByType={sourcesByType}
+              sidebarTab={memoriesSidebarTab}
+              setSidebarTab={setMemoriesSidebarTab}
             />
           )}
 
@@ -201,63 +204,52 @@ function AuthenticatedApp() {
             />
           ) : activeView === "notes" ? (
             <aside className="sticky top-[74px] hidden h-[calc(100vh-74px)] lg:block border-l bg-background w-[var(--chat-width,360px)]">
-              <Tabs defaultValue="chat" className="h-full flex flex-col">
-                <TabsList className="grid w-full grid-cols-2 rounded-none border-b bg-muted/30 shrink-0">
-                  <TabsTrigger value="chat" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent">
-                    AI Chat
-                  </TabsTrigger>
-                  <TabsTrigger value="vault" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent">
-                    Vault
-                  </TabsTrigger>
-                </TabsList>
-                <TabsContent value="chat" className="flex-1 min-h-0 m-0 p-0">
-                  {chatPanel}
-                </TabsContent>
-                <TabsContent value="vault" className="flex-1 min-h-0 m-0 p-0">
-                  <ScrollArea className="h-full">
-                    <div className="space-y-5 p-4">
-                      <div>
-                        <div className="flex items-center gap-2 text-lg font-bold">
-                          <FileText className="h-6 w-6" />
-                          Vault
-                        </div>
-                        <div className="space-y-4 mt-6">
-                          {(["note", "pdf"] as const).map((type) => (
-                            <div key={type}>
-                              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{type}</div>
-                              <div className="space-y-1">
-                                {sourcesByType[type].length ? (
-                                  sourcesByType[type].map((source) => (
-                                    <button
-                                      className={cn(
-                                        "w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-muted transition-colors duration-150",
-                                        selectedSourceId === source.id && "bg-muted font-medium",
-                                      )}
-                                      key={source.id}
-                                      onClick={() => { setSelectedSourceId(source.id); setNotesMode("note"); }}
-                                      type="button"
-                                    >
-                                      <span className="flex w-full items-start justify-between gap-2 min-w-0">
-                                        <span className="min-w-0">
-                                          <span className="block truncate font-medium">{source.title}</span>
-                                          <span className="text-xs text-muted-foreground">{formatDate(source.created_at)}</span>
-                                        </span>
-                                        <StatusBadge status={source.status} />
+              {memoriesSidebarTab === "chat" ? (
+                chatPanel
+              ) : (
+                <ScrollArea className="h-full">
+                  <div className="space-y-5 p-4">
+                    <div>
+                      <div className="flex items-center gap-2 text-lg font-bold">
+                        <FileText className="h-6 w-6" />
+                        Vault
+                      </div>
+                      <div className="space-y-4 mt-6">
+                        {(["note", "pdf"] as const).map((type) => (
+                          <div key={type}>
+                            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{type}</div>
+                            <div className="space-y-1">
+                              {sourcesByType[type].length ? (
+                                sourcesByType[type].map((source) => (
+                                  <button
+                                    className={cn(
+                                      "w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-muted transition-colors duration-150",
+                                      selectedSourceId === source.id && "bg-muted font-medium",
+                                    )}
+                                    key={source.id}
+                                    onClick={() => { setSelectedSourceId(source.id); setNotesMode("note"); }}
+                                    type="button"
+                                  >
+                                    <span className="flex w-full items-start justify-between gap-2 min-w-0">
+                                      <span className="min-w-0">
+                                        <span className="block truncate font-medium">{source.title}</span>
+                                        <span className="text-xs text-muted-foreground">{formatDate(source.created_at)}</span>
                                       </span>
-                                    </button>
-                                  ))
-                                ) : (
-                                  <div className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">No {type} sources</div>
-                                )}
-                              </div>
+                                      <StatusBadge status={source.status} />
+                                    </span>
+                                  </button>
+                                ))
+                              ) : (
+                                <div className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">No {type} sources</div>
+                              )}
                             </div>
-                          ))}
-                        </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
-                  </ScrollArea>
-                </TabsContent>
-              </Tabs>
+                  </div>
+                </ScrollArea>
+              )}
             </aside>
           ) : null}
         </div>
