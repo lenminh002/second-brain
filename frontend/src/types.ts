@@ -90,6 +90,19 @@ export type GraphTransform = {
 
 export type GraphNodePositions = Record<string, { x: number; y: number }>;
 
+// d3-force internal simulation types (exported so hooks and subcomponents share them)
+import type { SimulationLinkDatum, SimulationNodeDatum } from "d3-force";
+
+export type SimNode = SimulationNodeDatum & {
+  id: string;
+  label: string;
+  type: "source" | "concept";
+};
+
+export type SimLink = SimulationLinkDatum<SimNode> & {
+  relation: string;
+};
+
 export type DragState = {
   mode: "pan";
   pointerId: number;

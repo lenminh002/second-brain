@@ -264,7 +264,8 @@ def _get_source_detail(account_id: str, source_id: str) -> dict[str, Any]:
 
 
 def _chat_response(account_id: str, message: str) -> dict[str, Any]:
-    _, citations, graph_context = _search_knowledge_base(account_id, message)
+    citations: list[dict[str, Any]] = []
+    graph_context: list[dict[str, Any]] = []
     tool_calls: list[dict[str, str]] = []
 
     def execute_tool(tool_name: str, tool_input: dict[str, Any]) -> dict[str, Any]:

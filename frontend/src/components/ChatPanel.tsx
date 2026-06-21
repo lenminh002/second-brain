@@ -1,4 +1,6 @@
 import { FormEvent } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Bot, GitBranch, Loader2, MessageCircle, ChevronRight, ChevronLeft } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -90,7 +92,15 @@ export function ChatPanel({
                       ))}
                     </div>
                   )}
-                  <p>{message.text}</p>
+                  {message.role === "assistant" ? (
+                    <div className="prose prose-sm dark:prose-invert max-w-none [&_*]:text-inherit text-current">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {message.text}
+                      </ReactMarkdown>
+                    </div>
+                  ) : (
+                    <p>{message.text}</p>
+                  )}
                   {!!message.citations?.length && (
                     <div className="mt-3 flex flex-wrap gap-1">
                       {message.citations.map((citation, citationIndex) => {

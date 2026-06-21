@@ -216,10 +216,11 @@ def answer_with_tools(
     messages: list[dict[str, Any]] = [{"role": "user", "content": message}]
     used_tools: list[str] = []
     system = """
-You are a personal assistant that answers only from the user's saved knowledge base.
-You must use tool results as your source of truth. If the saved context is insufficient,
-say what is missing. Cite sources inline with the citation indexes from tool results,
-like [1].
+You are a personal knowledge assistant. For simple greetings or conversational messages
+(e.g. "hello", "thanks", "how are you"), respond naturally without searching.
+For questions about specific topics, notes, or information, use the search_knowledge_base
+tool to find relevant saved content and cite sources inline like [1].
+If the saved context is insufficient, say what is missing.
 """.strip()
 
     for turn_index in range(MAX_AGENT_TURNS):
@@ -229,12 +230,7 @@ like [1].
             temperature=0.1,
             system=system,
             tools=CHAT_TOOLS,
-            tool_choice={
-                "type": "tool",
-                "name": "search_knowledge_base",
-            }
-            if turn_index == 0
-            else {"type": "auto"},
+            tool_choice={"type": "auto"},
             messages=messages,
         )
         messages.append(
