@@ -5,7 +5,6 @@ import remarkGfm from "remark-gfm";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { formatDate } from "@/lib/format";
 import type { AccountRecord, ActiveView, PostRecord, SourceRecord } from "@/types";
 
@@ -26,7 +25,7 @@ export function HomeView({
 }) {
   return (
     <main className="min-h-[calc(100vh-74px)]">
-      <ScrollArea className="h-[calc(100vh-128px)]">
+      <div className="h-[calc(100vh-128px)] overflow-y-auto no-scrollbar">
       <div className="flex h-14 items-center justify-between px-6">
         <h1 className="font-bold">Home</h1>
         <Button onClick={refresh} size="icon" variant="outline">
@@ -83,7 +82,7 @@ export function HomeView({
             </div>
           )}
         </div>
-      </ScrollArea>
+      </div>
     </main>
   );
 }
