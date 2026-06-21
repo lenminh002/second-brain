@@ -103,10 +103,7 @@ export type DragState = {
   nodeId: string;
   startX: number;
   startY: number;
-  originX: number;
-  originY: number;
   moved: boolean;
-  neighborOrigins: GraphNodePositions;
 };
 
 export type Citation = {

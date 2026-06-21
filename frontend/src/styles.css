@@ -72,17 +72,20 @@ button:disabled,
 
 .social-grid {
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr) 360px;
+  grid-template-columns: var(--sidebar-width, 260px) minmax(0, 1fr) 360px;
+  transition: grid-template-columns 300ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .notes-grid {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr) 360px;
+  grid-template-columns: var(--sidebar-width, 260px) minmax(0, 1fr) auto;
+  transition: grid-template-columns 300ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .digest-grid {
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
+  grid-template-columns: var(--sidebar-width, 260px) minmax(0, 1fr);
+  transition: grid-template-columns 300ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .mobile-bottom-nav {
@@ -135,16 +138,11 @@ button:disabled,
   stroke-width: 4px;
   text-anchor: middle;
   text-transform: uppercase;
-  transition:
-    x 140ms ease,
-    y 140ms ease;
 }
 
 .graph-node {
   cursor: pointer;
-  transition:
-    opacity 140ms ease,
-    transform 180ms ease;
+  transition: opacity 140ms ease;
 }
 
 .graph-node.is-dragging {

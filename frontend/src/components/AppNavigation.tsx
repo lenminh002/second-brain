@@ -5,6 +5,7 @@ import {
   Compass,
   GitBranch,
   Home,
+  Menu,
   PenLine,
   Search,
   Settings,
@@ -13,6 +14,7 @@ import {
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { AccountRecord, ActiveView, NotesMode } from "@/types";
 
@@ -39,9 +41,6 @@ export function TopBar({ account }: { account: AccountRecord | null }) {
         <input className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground" placeholder="Search notes, concepts, posts..." />
       </div>
       <div className="flex items-center gap-3">
-        <Button className="hidden md:inline-flex" size="icon" variant="ghost">
-          <Search className="h-5 w-5" />
-        </Button>
         <Avatar>
           {account?.avatar_url && <AvatarImage alt={account.name} src={account.avatar_url} />}
           <AvatarFallback>{account?.initials || ""}</AvatarFallback>
@@ -57,9 +56,19 @@ type NavProps = {
   notesMode: NotesMode;
   setActiveView: (view: ActiveView) => void;
   setNotesMode: (mode: NotesMode) => void;
+  isMinimized: boolean;
+  toggleMinimize: () => void;
 };
 
-export function SidebarNav({ account, activeView, notesMode, setActiveView, setNotesMode }: NavProps) {
+export function SidebarNav({
+  account,
+  activeView,
+  notesMode,
+  setActiveView,
+  setNotesMode,
+  isMinimized,
+  toggleMinimize,
+}: NavProps) {
   const items = [
     { label: "Home", icon: Home, active: activeView === "home", action: () => setActiveView("home") },
     { label: "Notes", icon: BookOpen, active: activeView === "notes" && notesMode === "note", action: () => { setActiveView("notes"); setNotesMode("note"); } },
@@ -67,45 +76,134 @@ export function SidebarNav({ account, activeView, notesMode, setActiveView, setN
     { label: "Profile", icon: CircleUserRound, active: activeView === "profile", action: () => setActiveView("profile") },
   ];
 
+  const digestButton = (
+    <Button
+      className={cn(
+        "w-full transition-all duration-300",
+        isMinimized ? "justify-center px-0 h-10 w-10 mx-auto rounded-full" : "gap-2"
+      )}
+      onClick={() => setActiveView("digest")}
+      size={isMinimized ? "icon" : "default"}
+    >
+      <Upload className="h-4 w-4 shrink-0" />
+      {!isMinimized && <span>Digest Source</span>}
+    </Button>
+  );
+
   return (
-    <aside className="sticky top-[74px] hidden h-[calc(100vh-74px)] border-r bg-background px-5 py-7 lg:block">
-      <div className="mb-8 flex items-center gap-3">
-        <Avatar className="h-14 w-14">
+    <aside
+      className={cn(
+        "sticky top-[74px] hidden h-[calc(100vh-74px)] border-r bg-background py-7 lg:flex flex-col transition-all duration-300 ease-in-out",
+        isMinimized ? "px-3" : "px-5"
+      )}
+    >
+      {/* Menu Toggle Button at Top Left */}
+      <div className={cn("mb-6 flex items-center", isMinimized ? "justify-center" : "justify-start")}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              className="h-10 w-10 rounded-md text-muted-foreground hover:text-foreground shrink-0"
+              onClick={toggleMinimize}
+              size="icon"
+              variant="ghost"
+            >
+              <Menu className="h-5 w-5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="right">
+            {isMinimized ? "Expand menu" : "Collapse menu"}
+          </TooltipContent>
+        </Tooltip>
+      </div>
+
+      <div className={cn("mb-8 flex items-center transition-all duration-300", isMinimized ? "flex-col gap-2 justify-center" : "gap-3")}>
+        <Avatar className={cn("transition-all duration-300", isMinimized ? "h-10 w-10" : "h-14 w-14")}>
           {account?.avatar_url && <AvatarImage alt={account.name} src={account.avatar_url} />}
           <AvatarFallback>{account?.initials || ""}</AvatarFallback>
         </Avatar>
-        <div>
-          <div className="font-semibold">{account?.name || "Loading"}</div>
-          <div className="text-sm text-muted-foreground">{account ? `@${account.handle}` : "Loading account"}</div>
-        </div>
+        {!isMinimized && (
+          <div className="transition-all duration-300 opacity-100 whitespace-nowrap overflow-hidden">
+            <div className="font-semibold">{account?.name || "Loading"}</div>
+            <div className="text-sm text-muted-foreground">{account ? `@${account.handle}` : "Loading account"}</div>
+          </div>
+        )}
       </div>
-      <nav className="space-y-1">
-        {items.map((item) => (
-          <Button
-            className={cn("w-full justify-start gap-3 text-base", item.active ? "text-foreground" : "text-muted-foreground")}
-            key={item.label}
-            onClick={item.action}
-            variant={item.active ? "secondary" : "ghost"}
-          >
-            <item.icon className="h-5 w-5" />
-            {item.label}
-          </Button>
-        ))}
+
+      <nav className="space-y-1 flex-grow flex flex-col items-stretch">
+        {items.map((item) => {
+          const buttonContent = (
+            <Button
+              className={cn(
+                "transition-all duration-300",
+                isMinimized ? "h-10 w-10 mx-auto justify-center" : "w-full justify-start gap-3 text-base",
+                item.active ? "text-foreground" : "text-muted-foreground"
+              )}
+              key={item.label}
+              onClick={item.action}
+              variant={item.active ? "secondary" : "ghost"}
+              size={isMinimized ? "icon" : "default"}
+            >
+              <item.icon className="h-5 w-5 shrink-0" />
+              {!isMinimized && <span>{item.label}</span>}
+            </Button>
+          );
+
+          if (isMinimized) {
+            return (
+              <Tooltip key={item.label}>
+                <TooltipTrigger asChild>{buttonContent}</TooltipTrigger>
+                <TooltipContent side="right">{item.label}</TooltipContent>
+              </Tooltip>
+            );
+          }
+
+          return <div key={item.label}>{buttonContent}</div>;
+        })}
+
         {[
           { label: "Explore", icon: Compass },
           { label: "Notifications", icon: Bell },
           { label: "Settings", icon: Settings },
-        ].map((item) => (
-          <Button className="w-full justify-start gap-3 text-base text-muted-foreground" disabled key={item.label} variant="ghost">
-            <item.icon className="h-5 w-5" />
-            {item.label}
-          </Button>
-        ))}
+        ].map((item) => {
+          const buttonContent = (
+            <Button
+              className={cn(
+                "transition-all duration-300",
+                isMinimized ? "h-10 w-10 mx-auto justify-center" : "w-full justify-start gap-3 text-base text-muted-foreground"
+              )}
+              disabled
+              key={item.label}
+              variant="ghost"
+              size={isMinimized ? "icon" : "default"}
+            >
+              <item.icon className="h-5 w-5 shrink-0" />
+              {!isMinimized && <span>{item.label}</span>}
+            </Button>
+          );
+
+          if (isMinimized) {
+            return (
+              <Tooltip key={item.label}>
+                <TooltipTrigger asChild>{buttonContent}</TooltipTrigger>
+                <TooltipContent side="right">{item.label}</TooltipContent>
+              </Tooltip>
+            );
+          }
+
+          return <div key={item.label}>{buttonContent}</div>;
+        })}
       </nav>
-      <Button className="mt-6 w-full gap-2" onClick={() => setActiveView("digest")}>
-        <Upload className="h-4 w-4" />
-        Digest Source
-      </Button>
+
+      <div className="pt-4 border-t">
+        {isMinimized ? (
+          <Tooltip>
+            <TooltipTrigger asChild>{digestButton}</TooltipTrigger>
+            <TooltipContent side="right">Digest Source</TooltipContent>
+          </Tooltip>
+        ) : (
+          digestButton
+        )}
+      </div>
     </aside>
   );
 }

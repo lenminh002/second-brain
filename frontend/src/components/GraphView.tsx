@@ -1,11 +1,46 @@
-import { MouseEvent, PointerEvent, WheelEvent, useEffect, useMemo, useState } from "react";
+import { MouseEvent, PointerEvent, WheelEvent, useEffect, useMemo, useRef, useState } from "react";
+import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation } from "d3-force";
+import type { SimulationLinkDatum, SimulationNodeDatum } from "d3-force";
 import { GitBranch, RefreshCcw, RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import type { DragState, GraphEdge, GraphNodePositions, GraphTransform, KnowledgeGraph, PositionedGraphNode } from "@/types";
+import type { DragState, GraphEdge, GraphTransform, KnowledgeGraph } from "@/types";
+
+// Internal simulation node — d3-force mutates x, y, vx, vy, fx, fy in place
+type SimNode = SimulationNodeDatum & {
+  id: string;
+  label: string;
+  type: "source" | "concept";
+};
+
+type SimLink = SimulationLinkDatum<SimNode> & {
+  relation: string;
+};
+
+// Seed initial positions the same way the old trig layout did so the
+// first tick starts from a well-spread state rather than the origin.
+function computeInitialPositions(nodes: KnowledgeGraph["nodes"]): Record<string, { x: number; y: number }> {
+  const sourceNodes = nodes.filter((n) => n.type === "source");
+  const conceptNodes = nodes.filter((n) => n.type === "concept");
+  const cx = 520;
+  const cy = 340;
+  const sourceRadius = Math.max(88, sourceNodes.length * 16);
+  const conceptRadius = Math.max(210, conceptNodes.length * 11);
+  const positions: Record<string, { x: number; y: number }> = {};
+  sourceNodes.forEach((node, i) => {
+    const angle = (i / Math.max(sourceNodes.length, 1)) * Math.PI * 2 - Math.PI / 2;
+    positions[node.id] = { x: cx + Math.cos(angle) * sourceRadius, y: cy + Math.sin(angle) * sourceRadius };
+  });
+  conceptNodes.forEach((node, i) => {
+    const ring = conceptRadius + (i % 3) * 46;
+    const angle = (i / Math.max(conceptNodes.length, 1)) * Math.PI * 2 + Math.PI / 8;
+    positions[node.id] = { x: cx + Math.cos(angle) * ring, y: cy + Math.sin(angle) * ring };
+  });
+  return positions;
+}
 
 export function GraphView({
   graph,
@@ -18,9 +53,17 @@ export function GraphView({
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [transform, setTransform] = useState<GraphTransform>({ x: 0, y: 0, scale: 1 });
   const [dragState, setDragState] = useState<DragState | null>(null);
-  const [nodePositions, setNodePositions] = useState<GraphNodePositions>({});
   const [suppressClickNodeId, setSuppressClickNodeId] = useState<string | null>(null);
 
+  // Sim nodes are mutated in-place by d3; we keep a ref and bump a counter
+  // to trigger React re-renders on each physics tick.
+  const simNodesRef = useRef<SimNode[]>([]);
+  const simRef = useRef<ReturnType<typeof forceSimulation<SimNode>> | null>(null);
+  const [, forceUpdate] = useState(0);
+
+  const svgRef = useRef<SVGSVGElement>(null);
+
+  // Stable adjacency map used for highlight / popup
   const adjacency = useMemo(() => {
     const neighbors = new Map<string, Set<string>>();
     const edgeKeys = new Set<string>();
@@ -35,56 +78,66 @@ export function GraphView({
     return { neighbors, edgeKeys };
   }, [graph.edges]);
 
-  const positioned = useMemo<PositionedGraphNode[]>(() => {
-    const nodes = graph.nodes || [];
-    const sourceNodes = nodes.filter((node) => node.type === "source");
-    const conceptNodes = nodes.filter((node) => node.type === "concept");
-    const centerX = 520;
-    const centerY = 340;
-    const sourceRadius = Math.max(88, sourceNodes.length * 16);
-    const conceptRadius = Math.max(210, conceptNodes.length * 11);
-
-    const sourcePositions = sourceNodes.map((node, index) => {
-      const angle = (index / Math.max(sourceNodes.length, 1)) * Math.PI * 2 - Math.PI / 2;
-      return {
-        ...node,
-        x: centerX + Math.cos(angle) * sourceRadius,
-        y: centerY + Math.sin(angle) * sourceRadius,
-      };
-    });
-
-    const conceptPositions = conceptNodes.map((node, index) => {
-      const degree = adjacency.neighbors.get(node.id)?.size || 1;
-      const ring = conceptRadius + (index % 3) * 46 + Math.min(degree, 4) * 8;
-      const angle = (index / Math.max(conceptNodes.length, 1)) * Math.PI * 2 + Math.PI / 8;
-      return {
-        ...node,
-        x: centerX + Math.cos(angle) * ring,
-        y: centerY + Math.sin(angle) * ring,
-      };
-    });
-
-    return [...sourcePositions, ...conceptPositions];
-  }, [adjacency.neighbors, graph.nodes]);
+  // Build / rebuild the simulation whenever graph data changes
   useEffect(() => {
-    const currentIds = new Set(graph.nodes.map((node) => node.id));
-    setNodePositions((current) => {
-      const next = Object.fromEntries(Object.entries(current).filter(([nodeId]) => currentIds.has(nodeId)));
-      return Object.keys(next).length === Object.keys(current).length ? current : next;
-    });
-  }, [graph.nodes]);
+    if (!graph.nodes.length) return;
 
-  const renderedNodes = useMemo<PositionedGraphNode[]>(
-    () =>
-      positioned.map((node) => ({
-        ...node,
-        ...nodePositions[node.id],
-      })),
-    [nodePositions, positioned],
-  );
-  const byId = Object.fromEntries(renderedNodes.map((node) => [node.id, node]));
+    const initPos = computeInitialPositions(graph.nodes);
+    const nodes: SimNode[] = graph.nodes.map((n) => ({
+      ...n,
+      x: initPos[n.id]?.x ?? 520,
+      y: initPos[n.id]?.y ?? 340,
+    }));
+    simNodesRef.current = nodes;
+
+    const nodeById = new Map(nodes.map((n) => [n.id, n]));
+    const links: SimLink[] = graph.edges
+      .filter((e) => nodeById.has(e.source) && nodeById.has(e.target))
+      .map((e) => ({ source: e.source, target: e.target, relation: e.relation }));
+
+    const sim = forceSimulation<SimNode>(nodes)
+      .force("charge", forceManyBody<SimNode>().strength(-220))
+      .force(
+        "link",
+        forceLink<SimNode, SimLink>(links)
+          .id((d) => d.id)
+          .distance(90)
+          .strength(0.6),
+      )
+      .force("center", forceCenter(520, 340))
+      .force("collide", forceCollide<SimNode>((d) => (d.type === "source" ? 30 : 20)))
+      .velocityDecay(0.4)
+      .on("tick", () => {
+        // d3 mutates nodes in-place; bump counter to re-render
+        forceUpdate((t) => t + 1);
+      });
+
+    simRef.current = sim;
+    return () => {
+      sim.stop();
+    };
+  }, [graph.nodes, graph.edges]);
+
+  // Convert a client pointer position to simulation coordinate space,
+  // accounting for the SVG viewBox scaling and the <g> pan/zoom transform.
+  function clientToSim(clientX: number, clientY: number): { x: number; y: number } {
+    const svg = svgRef.current;
+    if (!svg) return { x: clientX, y: clientY };
+    const rect = svg.getBoundingClientRect();
+    const vbX = (clientX - rect.left) * (1040 / rect.width);
+    const vbY = (clientY - rect.top) * (680 / rect.height);
+    return {
+      x: (vbX - transform.x) / transform.scale,
+      y: (vbY - transform.y) / transform.scale,
+    };
+  }
+
+  // Read live node positions from the sim ref for this render frame
+  const renderedNodes = simNodesRef.current;
+  const byId = Object.fromEntries(renderedNodes.map((n) => [n.id, n]));
+
   const activeNodeId = selectedNodeId || hoveredNodeId;
-  const activeNeighbors = activeNodeId ? adjacency.neighbors.get(activeNodeId) || new Set<string>() : new Set<string>();
+  const activeNeighbors = activeNodeId ? adjacency.neighbors.get(activeNodeId) ?? new Set<string>() : new Set<string>();
   const selectedNode = activeNodeId ? byId[activeNodeId] : null;
   const connectedNodes = [...activeNeighbors].map((id) => byId[id]).filter(Boolean);
 
@@ -99,15 +152,30 @@ export function GraphView({
   function resetView() {
     setTransform({ x: 0, y: 0, scale: 1 });
     setSelectedNodeId(null);
-    setNodePositions({});
+    // Re-seed positions and reheat the simulation
+    const sim = simRef.current;
+    if (sim) {
+      const initPos = computeInitialPositions(graph.nodes);
+      simNodesRef.current.forEach((n) => {
+        n.x = initPos[n.id]?.x ?? 520;
+        n.y = initPos[n.id]?.y ?? 340;
+        n.vx = 0;
+        n.vy = 0;
+        n.fx = null;
+        n.fy = null;
+      });
+      sim.alpha(1).restart();
+    }
   }
 
   function fitGraph() {
     if (!renderedNodes.length) return;
-    const minX = Math.min(...renderedNodes.map((node) => node.x));
-    const maxX = Math.max(...renderedNodes.map((node) => node.x));
-    const minY = Math.min(...renderedNodes.map((node) => node.y));
-    const maxY = Math.max(...renderedNodes.map((node) => node.y));
+    const xs = renderedNodes.map((n) => n.x ?? 0);
+    const ys = renderedNodes.map((n) => n.y ?? 0);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
     const graphWidth = Math.max(maxX - minX, 1);
     const graphHeight = Math.max(maxY - minY, 1);
     const scale = Math.min(1.25, Math.max(0.55, Math.min(900 / graphWidth, 560 / graphHeight) * 0.75));
@@ -127,14 +195,11 @@ export function GraphView({
 
   function onWheel(event: WheelEvent<SVGSVGElement>) {
     event.preventDefault();
-    const direction = event.deltaY > 0 ? -0.08 : 0.08;
-    zoomBy(direction);
+    zoomBy(event.deltaY > 0 ? -0.08 : 0.08);
   }
 
   function onPointerDown(event: PointerEvent<SVGSVGElement>) {
-    if (event.target instanceof SVGElement && event.target.closest("[data-graph-node='true']")) {
-      return;
-    }
+    if (event.target instanceof SVGElement && event.target.closest("[data-graph-node='true']")) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     setDragState({
       mode: "pan",
@@ -148,6 +213,7 @@ export function GraphView({
 
   function onPointerMove(event: PointerEvent<SVGSVGElement>) {
     if (!dragState || dragState.pointerId !== event.pointerId) return;
+
     if (dragState.mode === "pan") {
       setTransform((current) => ({
         ...current,
@@ -157,54 +223,59 @@ export function GraphView({
       return;
     }
 
-    const deltaX = (event.clientX - dragState.startX) / transform.scale;
-    const deltaY = (event.clientY - dragState.startY) / transform.scale;
+    // Node drag — move the pinned node to follow the pointer in sim space;
+    // d3-force pulls the rest of the graph along automatically.
+    const simPos = clientToSim(event.clientX, event.clientY);
+    const simNode = simNodesRef.current.find((n) => n.id === dragState.nodeId);
+    if (simNode) {
+      simNode.fx = simPos.x;
+      simNode.fy = simPos.y;
+    }
     const moved = dragState.moved || Math.hypot(event.clientX - dragState.startX, event.clientY - dragState.startY) > 4;
-    const FOLLOW = 0.45;
-    setNodePositions((current) => {
-      const next = {
-        ...current,
-        [dragState.nodeId]: { x: dragState.originX + deltaX, y: dragState.originY + deltaY },
-      };
-      for (const [neighborId, origin] of Object.entries(dragState.neighborOrigins)) {
-        next[neighborId] = { x: origin.x + deltaX * FOLLOW, y: origin.y + deltaY * FOLLOW };
-      }
-      return next;
-    });
     if (moved !== dragState.moved) {
       setDragState({ ...dragState, moved });
     }
   }
 
   function onPointerUp(event: PointerEvent<SVGSVGElement>) {
-    if (dragState?.pointerId === event.pointerId) {
-      if (dragState.mode === "node" && dragState.moved) {
+    if (dragState?.pointerId !== event.pointerId) return;
+    if (dragState.mode === "pan") {
+      // A background tap that didn't move = deselect
+      const moved = Math.hypot(event.clientX - dragState.startX, event.clientY - dragState.startY) > 4;
+      if (!moved) setSelectedNodeId(null);
+    } else if (dragState.mode === "node") {
+      if (dragState.moved) {
         setSuppressClickNodeId(dragState.nodeId);
         setSelectedNodeId(dragState.nodeId);
       }
-      setDragState(null);
+      // Unpin the node and let the sim cool back down
+      const simNode = simNodesRef.current.find((n) => n.id === dragState.nodeId);
+      if (simNode) {
+        simNode.fx = null;
+        simNode.fy = null;
+      }
+      simRef.current?.alphaTarget(0);
     }
+    setDragState(null);
   }
 
-  function onNodePointerDown(event: PointerEvent<SVGGElement>, node: PositionedGraphNode) {
+  function onNodePointerDown(event: PointerEvent<SVGGElement>, node: SimNode) {
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
-    const neighborIds = adjacency.neighbors.get(node.id) ?? new Set<string>();
-    const neighborOrigins: Record<string, { x: number; y: number }> = {};
-    for (const neighborId of neighborIds) {
-      const neighbor = byId[neighborId];
-      if (neighbor) neighborOrigins[neighborId] = { x: neighbor.x, y: neighbor.y };
+    // Pin the node to its current position and reheat the sim so neighbors respond
+    const simNode = simNodesRef.current.find((n) => n.id === node.id);
+    if (simNode) {
+      simNode.fx = simNode.x;
+      simNode.fy = simNode.y;
     }
+    simRef.current?.alphaTarget(0.3).restart();
     setDragState({
       mode: "node",
       pointerId: event.pointerId,
       nodeId: node.id,
       startX: event.clientX,
       startY: event.clientY,
-      originX: node.x,
-      originY: node.y,
       moved: false,
-      neighborOrigins,
     });
   }
 
@@ -265,6 +336,7 @@ export function GraphView({
       </div>
       <div className="relative">
         <svg
+          ref={svgRef}
           className={cn("graph-canvas graph-stage", dragState && "cursor-grabbing")}
           onDoubleClick={resetView}
           onPointerDown={onPointerDown}
@@ -286,10 +358,10 @@ export function GraphView({
             {graph.edges.map((edge) => {
               const source = byId[edge.source];
               const target = byId[edge.target];
-              if (!source || !target) return null;
+              if (!source || !target || source.x == null || target.x == null) return null;
               const active = isConnectedEdge(edge);
-              const midX = (source.x + target.x) / 2;
-              const midY = (source.y + target.y) / 2;
+              const midX = ((source.x ?? 0) + (target.x ?? 0)) / 2;
+              const midY = ((source.y ?? 0) + (target.y ?? 0)) / 2;
               return (
                 <g className={cn("graph-edge", active ? "is-active" : "is-dimmed")} key={`${edge.source}-${edge.target}-${edge.relation}`}>
                   <line x1={source.x} y1={source.y} x2={target.x} y2={target.y} />
@@ -302,9 +374,10 @@ export function GraphView({
               );
             })}
             {renderedNodes.map((node) => {
+              if (node.x == null || node.y == null) return null;
               const active = isConnectedNode(node.id);
               const selected = activeNodeId === node.id;
-              const dragging = dragState?.mode === "node" && (dragState.nodeId === node.id || node.id in dragState.neighborOrigins);
+              const dragging = dragState?.mode === "node" && dragState.nodeId === node.id;
               const radius = node.type === "source" ? 24 : 15;
               return (
                 <g
@@ -324,7 +397,7 @@ export function GraphView({
             })}
           </g>
         </svg>
-        {selectedNode && (
+        {selectedNode && selectedNode.x != null && (
           <div className="absolute right-4 top-4 w-72 rounded-xl border bg-white/95 p-4 shadow-xl backdrop-blur">
             <div className="flex items-start justify-between gap-3">
               <div>

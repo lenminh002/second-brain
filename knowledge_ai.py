@@ -90,8 +90,8 @@ def _fallback_enrichment(title: str, content: str) -> dict[str, Any]:
 
 
 def enrich_content(source_type: str, title: str, source_url: str | None, content: str) -> dict[str, Any]:
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not api_key:
+    client = _client()
+    if client is None:
         return _fallback_enrichment(title, content)
 
     prompt = f"""
@@ -115,7 +115,6 @@ Content:
 {content[:30000]}
 """.strip()
 
-    client = Anthropic(api_key=api_key)
     try:
         message = client.messages.create(
             model=MODEL_NAME,
@@ -123,10 +122,7 @@ Content:
             temperature=0.2,
             messages=[{"role": "user", "content": prompt}],
         )
-        response_text = "".join(
-            block.text for block in message.content if getattr(block, "type", None) == "text"
-        )
-        parsed = json.loads(_strip_code_fence(response_text))
+        parsed = json.loads(_strip_code_fence(_text_from_content(message.content)))
         if not isinstance(parsed, dict):
             raise ValueError("Claude enrichment response was not a JSON object.")
     except Exception:
@@ -158,8 +154,8 @@ def answer_with_context(
         f"- {item.get('concept_label')}: connects {', '.join(item.get('source_titles', []))}"
         for item in (graph_context or [])
     )
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not api_key:
+    client = _client()
+    if client is None:
         if not chunks:
             return "I do not have enough knowledge-base context to answer that yet."
         return (
@@ -180,14 +176,18 @@ Retrieved context:
 Graph context:
 {graph_lines or "No graph-neighbor context found."}
 """.strip()
-    client = Anthropic(api_key=api_key)
     response = client.messages.create(
         model=MODEL_NAME,
         max_tokens=1200,
         temperature=0.1,
         messages=[{"role": "user", "content": prompt}],
     )
-    return "".join(block.text for block in response.content if getattr(block, "type", None) == "text").strip()
+    return _text_from_content(response.content)
+
+
+def _client() -> Anthropic | None:
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    return Anthropic(api_key=api_key) if api_key else None
 
 
 def _message_content_to_params(content: Any) -> list[dict[str, Any]]:
@@ -210,11 +210,9 @@ def answer_with_tools(
     message: str,
     execute_tool: Callable[[str, dict[str, Any]], dict[str, Any]],
 ) -> tuple[str, list[str]]:
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not api_key:
+    client = _client()
+    if client is None:
         raise ValueError("ANTHROPIC_API_KEY is required for tool-based answers.")
-
-    client = Anthropic(api_key=api_key)
     messages: list[dict[str, Any]] = [{"role": "user", "content": message}]
     used_tools: list[str] = []
     system = """

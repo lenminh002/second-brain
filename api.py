@@ -12,13 +12,38 @@ from starlette.datastructures import UploadFile
 
 load_dotenv()
 
+from contextlib import asynccontextmanager
+
 from embeddings import cosine_similarity, embed_text
 from ingestion import VideoIngestionDeferred, create_processing_source, process_source
 from knowledge_ai import answer_with_context, answer_with_tools
 from storage import get_account as storage_get_account
-from storage import load_chunks, load_graph, load_posts, load_sources, upsert_account
+from storage import load_chunks, load_graph, load_posts, load_sources, upsert_account, save_source_result
 
-app = FastAPI(title="Personal Knowledge Base API", version="0.1.0")
+
+def cleanup_stuck_processing_sources() -> None:
+    try:
+        account = storage_get_account("mock-user") or upsert_account(MOCK_ACCOUNT)
+        account_id = account["id"]
+        sources = load_sources(account_id)
+        for source in sources:
+            if source.get("status") == "processing":
+                source["status"] = "failed"
+                source["error"] = "Server was restarted while processing this source."
+                source["progress_stage"] = "complete"
+                source["progress_percent"] = 100
+                save_source_result(account_id, source)
+    except Exception as exc:
+        print(f"Failed to cleanup stuck processing sources on startup: {exc}")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    cleanup_stuck_processing_sources()
+    yield
+
+
+app = FastAPI(title="Personal Knowledge Base API", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -27,6 +52,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
 
 MOCK_ACCOUNT = {
     "id": "mock-user",
@@ -254,11 +281,7 @@ def _chat_response(account_id: str, message: str) -> dict[str, Any]:
         raise ValueError(f"Unknown tool: {tool_name}")
 
     try:
-        tool_answer = answer_with_tools(message, execute_tool)
-        if isinstance(tool_answer, tuple):
-            answer, used_tools = tool_answer
-        else:
-            answer, used_tools = tool_answer, []
+        answer, used_tools = answer_with_tools(message, execute_tool)
         tool_calls = [{"name": name} for name in used_tools]
     except ValueError:
         top_chunks = [
