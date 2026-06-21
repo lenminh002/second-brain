@@ -289,3 +289,60 @@ def get_source_detail(account_id: str, source_id: str) -> dict[str, Any]:
                 "content": str(source.get("content", ""))[:6000],
             }
     raise ValueError("Source not found.")
+
+
+def list_knowledge_base_tags(account_id: str) -> list[str]:
+    graph = load_graph(account_id)
+    tags = {str(node.get("label")) for node in graph.get("nodes", []) if node.get("type") == "tag"}
+    return sorted(t for t in tags if t)
+
+
+def add_tag_to_source(account_id: str, source_id: str, tag: str) -> dict[str, Any]:
+    from storage import save_sources, save_graph
+    from storage_backends.utils import merge_graph
+
+    tag = str(tag).strip()
+    if not tag:
+        raise ValueError("Tag cannot be empty.")
+
+    sources = load_sources(account_id)
+    source = next((s for s in sources if s.get("id") == source_id), None)
+    if not source:
+        raise ValueError("Source not found.")
+
+    tags = source.get("tags", [])
+    if tag not in tags:
+        tags.append(tag)
+        source["tags"] = tags
+        save_sources(account_id, sources)
+
+        graph = load_graph(account_id)
+        updated_graph = merge_graph(graph, source, source.get("concepts", []), tags=tags)
+        save_graph(account_id, updated_graph)
+
+    return {"status": "success", "added_tag": tag, "source_tags": tags}
+
+
+def create_agent_post(account_id: str, body: str) -> dict[str, Any]:
+    import uuid
+    from datetime import datetime, timezone
+    from storage import load_posts, save_posts
+
+    body = str(body).strip()
+    if not body:
+        raise ValueError("Post body cannot be empty.")
+
+    posts = load_posts(account_id)
+    post = {
+        "id": str(uuid.uuid4()),
+        "account_id": account_id,
+        "source_id": "chat-agent",
+        "source_title": "Agent Insight",
+        "body": body,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    
+    posts.insert(0, post)
+    save_posts(account_id, posts)
+
+    return {"status": "success", "post_id": post["id"]}

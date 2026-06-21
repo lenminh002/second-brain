@@ -16,6 +16,9 @@ from services.retrieval import (
     explore_graph_connections,
     get_source_detail,
     search_knowledge_base,
+    list_knowledge_base_tags,
+    add_tag_to_source,
+    create_agent_post,
 )
 
 
@@ -23,6 +26,12 @@ def _record_tool_budget(state: AgentRunState, tool_name: str) -> None:
     if state.tool_call_count >= max_tool_calls():
         raise ValueError(f"Tool budget exhausted before {tool_name}.")
     state.tool_call_count += 1
+
+
+def _create_post_and_record(state: AgentRunState, body: str) -> dict[str, Any]:
+    _record_tool_budget(state, "create_post")
+    result = create_agent_post(state.account_id, body)
+    return result
 
 
 def _search_and_merge(state: AgentRunState, query: str) -> dict[str, Any]:
@@ -50,6 +59,18 @@ def _compare_and_record(state: AgentRunState, source_ids: list[str]) -> dict[str
     _record_tool_budget(state, "compare_sources")
     result = compare_sources(state.account_id, source_ids)
     state.compared_sources = result
+    return result
+
+
+def _list_tags_and_record(state: AgentRunState) -> dict[str, Any]:
+    _record_tool_budget(state, "list_tags")
+    tags = list_knowledge_base_tags(state.account_id)
+    return {"tags": tags}
+
+
+def _add_tag_and_record(state: AgentRunState, source_id: str, tag: str) -> dict[str, Any]:
+    _record_tool_budget(state, "add_tag")
+    result = add_tag_to_source(state.account_id, source_id, tag)
     return result
 
 
@@ -124,6 +145,46 @@ def _make_execute_tool(
                     "shared_concepts": result.get("shared_concepts", []),
                     "tool_call_count": state.tool_call_count,
                 },
+            )
+            return result
+        if tool_name == "list_tags":
+            result = _list_tags_and_record(state)
+            _add_step(
+                state,
+                emit_event,
+                "gathering",
+                "Listed existing tags",
+                f"Found {len(result.get('tags', []))} tag(s).",
+                metadata={"tool_call_count": state.tool_call_count},
+            )
+            return result
+        if tool_name == "add_tag":
+            source_id = str(tool_input.get("source_id") or "").strip()
+            tag = str(tool_input.get("tag") or "").strip()
+            if not source_id or not tag:
+                raise ValueError("source_id and tag are required.")
+            result = _add_tag_and_record(state, source_id, tag)
+            _add_step(
+                state,
+                emit_event,
+                "gathering",
+                "Added tag to source",
+                f"Tagged {source_id} with {tag}.",
+                metadata={"tag": tag, "tool_call_count": state.tool_call_count},
+            )
+            return result
+        if tool_name == "create_post":
+            body = str(tool_input.get("body") or "").strip()
+            if not body:
+                raise ValueError("body is required.")
+            result = _create_post_and_record(state, body)
+            _add_step(
+                state,
+                emit_event,
+                "gathering",
+                "Published post to timeline",
+                f"Body: {body[:60]}...",
+                metadata={"tool_call_count": state.tool_call_count},
             )
             return result
         raise ValueError(f"Unknown tool: {tool_name}")

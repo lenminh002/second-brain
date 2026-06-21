@@ -4,6 +4,8 @@ import re
 import uuid
 from typing import Any
 
+from embeddings import cosine_similarity
+
 def slugify(value: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
     return slug[:80] or str(uuid.uuid4())
@@ -24,7 +26,7 @@ def coerce_graph(value: Any) -> dict[str, list[dict[str, Any]]]:
 def merge_graph(
     graph: dict[str, list[dict[str, Any]]],
     source: dict[str, Any],
-    concepts: list[str],
+    concepts: list[dict[str, Any]],
     tags: list[str] | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
     nodes = graph.get("nodes") if isinstance(graph.get("nodes"), list) else []
@@ -48,9 +50,33 @@ def merge_graph(
         "type": "source",
     }
 
-    for concept in concepts:
-        concept_id = f"concept-{slugify(concept)}"
-        nodes_by_id[concept_id] = {"id": concept_id, "label": concept, "type": "concept"}
+    for concept_obj in concepts:
+        label = str(concept_obj.get("label", ""))
+        embedding = concept_obj.get("embedding")
+        if not label:
+            continue
+            
+        best_match_id = None
+        best_score = 0.0
+        
+        # If we have an embedding, perform semantic entity resolution
+        if embedding:
+            for node in nodes_by_id.values():
+                if node.get("type") == "concept" and "embedding" in node:
+                    score = cosine_similarity(embedding, node["embedding"])
+                    if score > 0.82 and score > best_score:
+                        best_score = score
+                        best_match_id = str(node["id"])
+        
+        if best_match_id:
+            concept_id = best_match_id
+        else:
+            concept_id = f"concept-{slugify(label)}"
+            concept_node: dict[str, Any] = {"id": concept_id, "label": label, "type": "concept"}
+            if embedding:
+                concept_node["embedding"] = embedding
+            nodes_by_id[concept_id] = concept_node
+            
         key = (source_node_id, concept_id, "mentions")
         if key not in edge_keys:
             edges.append({"source": source_node_id, "target": concept_id, "relation": "mentions"})

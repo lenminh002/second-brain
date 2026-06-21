@@ -267,6 +267,35 @@ def run_agent(
         metadata=verification,
     )
 
+    if verification.get("status") == "warning" and state.rounds_used <= max_research_rounds():
+        state.rounds_used += 1
+        state.history.append({"role": "assistant", "text": answer})
+        
+        unsupported = verification.get("unsupported_citation_indices", [])
+        state.message = f"Critique: Your previous answer contained unsupported or hallucinated citations (e.g. {unsupported}). Please revise your answer to strictly use the provided context and citations."
+        
+        correction_text = "\n\n*Wait, I noticed an error in my citations. Let me correct that:*\n\n"
+        if stream_text and emit_event:
+            emit_event({"type": "text", "text": correction_text})
+            
+        revised_answer = _synthesize_answer(state, emit_event, stream_text=stream_text)
+        
+        if stream_text:
+            answer += correction_text + revised_answer
+        else:
+            answer = revised_answer
+            
+        verification = _verification_summary(revised_answer, state.citations)
+        _add_step(
+            state,
+            emit_event,
+            "verification",
+            "Re-checked citation grounding",
+            f"{verification['citation_count']} citation(s), status: {verification['status']}.",
+            status=verification["status"],
+            metadata=verification,
+        )
+
     return {
         "answer": answer,
         "citations": state.citations,

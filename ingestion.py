@@ -106,13 +106,21 @@ def _replace_source_artifacts(source: dict[str, Any], content: str, enrichment: 
         "body": enrichment["social_post"],
         "created_at": now_iso(),
     }
+    
+    raw_concepts = enrichment.get("concepts", [])
+    concept_embeddings = embed_texts(raw_concepts) if raw_concepts else []
+    embedded_concepts = [
+        {"label": label, "embedding": emb} 
+        for label, emb in zip(raw_concepts, concept_embeddings)
+    ]
+    
     _set_progress(source, "graphing")
     commit_source_artifacts(
         account_id,
         source,
         chunks,
         post,
-        enrichment["concepts"],
+        embedded_concepts,
         tags=enrichment.get("tags", []),
     )
 

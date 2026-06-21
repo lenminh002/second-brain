@@ -99,7 +99,7 @@ class FirestoreStorageBackend(StorageBackend):
         source: dict[str, Any],
         chunks: list[dict[str, Any]],
         post: dict[str, Any],
-        concepts: list[str],
+        concepts: list[dict[str, Any]],
         tags: list[str] | None = None,
     ) -> None:
         source_id = str(source["id"])

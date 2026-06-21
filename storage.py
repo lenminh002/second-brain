@@ -90,7 +90,7 @@ def commit_source_artifacts(
     source: dict[str, Any],
     chunks: list[dict[str, Any]],
     post: dict[str, Any],
-    concepts: list[str],
+    concepts: list[dict[str, Any]],
     tags: list[str] | None = None,
 ) -> None:
     _backend().commit_source_artifacts(account_id, source, chunks, post, concepts, tags=tags)

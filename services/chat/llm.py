@@ -81,6 +81,49 @@ CHAT_TOOLS = [
             "additionalProperties": False,
         },
     },
+    {
+        "name": "list_tags",
+        "description": "List all tags currently used in the knowledge base graph to find ones to reuse.",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "add_tag",
+        "description": "Add a new tag to a specific source in the knowledge base.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "source_id": {
+                    "type": "string",
+                    "description": "The ID of the source to tag."
+                },
+                "tag": {
+                    "type": "string",
+                    "description": "The tag string to add. Use lowercase kebab-case."
+                }
+            },
+            "required": ["source_id", "tag"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "create_post",
+        "description": "Publish a thought, summary, or insight directly to the user's home timeline.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "body": {
+                    "type": "string",
+                    "description": "The textual body of the post to publish."
+                }
+            },
+            "required": ["body"],
+            "additionalProperties": False,
+        },
+    },
 ]
 
 CHAT_SYSTEM_PROMPT = """

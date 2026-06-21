@@ -124,3 +124,12 @@ uv run python ingest.py pdf --account-id "cli-user" --title "Paper" --file ./pap
 ```bash
 uv run pytest
 ```
+
+## Documentation
+
+For more detailed information about how the application works, please refer to the following documents in the `documents/` folder:
+- [Agent Workflow](documents/agent_workflow.md)
+- [Ingestion Workflow](documents/ingestion_workflow.md)
+- [System Architectures](documents/architectures.md)
+- [App Architecture](documents/app_architecture.md)
+- [Knowledge Graph](documents/knowledge_graph.md)
