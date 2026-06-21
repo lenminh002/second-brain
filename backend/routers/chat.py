@@ -10,8 +10,8 @@ import asyncio
 import json
 import threading
 
-from services.account_service import current_account
-from services.chat_service import run_agent
+from backend.services.account_service import current_account
+from backend.services.chat_service import run_agent
 
 router = APIRouter()
 
@@ -52,7 +52,7 @@ def _validated_history(payload: dict[str, Any]) -> list[dict[str, str]]:
 
 @router.post("/chat")
 async def chat(request: Request) -> dict[str, Any]:
-    from services.chat_service import chat_response
+    from backend.services.chat_service import chat_response
 
     account = current_account()
     payload = await request.json()

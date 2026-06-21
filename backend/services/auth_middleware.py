@@ -7,9 +7,9 @@ from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 from firebase_admin import auth
 
-from firebase_admin_app import get_firebase_admin_app
-from storage import get_account, upsert_account
-from services.account_service import _CURRENT_ACCOUNT_VAR
+from backend.firebase_admin_app import get_firebase_admin_app
+from backend.storage import get_account, upsert_account
+from backend.services.account_service import _CURRENT_ACCOUNT_VAR
 
 _FIREBASE_APP: Any = None
 

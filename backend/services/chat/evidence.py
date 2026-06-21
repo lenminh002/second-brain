@@ -3,8 +3,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from services.chat.settings import max_research_rounds, max_tool_calls, min_evidence_score
-from services.chat.types import AgentRunState
+from backend.services.chat.settings import max_research_rounds, max_tool_calls, min_evidence_score
+from backend.services.chat.types import AgentRunState
 
 
 def _source_ids_from_citations(citations: list[dict[str, Any]], limit: int = 5) -> list[str]:

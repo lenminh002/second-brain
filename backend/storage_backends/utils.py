@@ -4,7 +4,7 @@ import re
 import uuid
 from typing import Any
 
-from embeddings import cosine_similarity
+from backend.embeddings import cosine_similarity
 
 def slugify(value: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")

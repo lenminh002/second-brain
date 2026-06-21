@@ -4,8 +4,8 @@ import heapq
 import sys
 from typing import Any
 
-from embeddings import cosine_similarity, embed_text
-from storage import load_chunks, load_graph, load_sources
+from backend.embeddings import cosine_similarity, embed_text
+from backend.storage import load_chunks, load_graph, load_sources
 
 
 def _sort_newest(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -298,8 +298,8 @@ def list_knowledge_base_tags(account_id: str) -> list[str]:
 
 
 def add_tag_to_source(account_id: str, source_id: str, tag: str) -> dict[str, Any]:
-    from storage import save_sources, save_graph
-    from storage_backends.utils import merge_graph
+    from backend.storage import save_sources, save_graph
+    from backend.storage_backends.utils import merge_graph
 
     tag = str(tag).strip()
     if not tag:
@@ -326,7 +326,7 @@ def add_tag_to_source(account_id: str, source_id: str, tag: str) -> dict[str, An
 def create_agent_post(account_id: str, body: str) -> dict[str, Any]:
     import uuid
     from datetime import datetime, timezone
-    from storage import load_posts, save_posts
+    from backend.storage import load_posts, save_posts
 
     body = str(body).strip()
     if not body:

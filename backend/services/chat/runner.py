@@ -4,24 +4,24 @@ import sys
 from collections.abc import Callable
 from typing import Any
 
-from services.chat.llm import answer_with_context, answer_with_tools, stream_with_tools
-from services.chat.evidence import (
+from backend.services.chat.llm import answer_with_context, answer_with_tools, stream_with_tools
+from backend.services.chat.evidence import (
     _context_chunks_from_citations,
     _evaluate_evidence,
     _source_ids_from_citations,
     _verification_summary,
 )
-from services.chat.planning import _direct_simple_response, build_agent_plan, classify_message
-from services.chat.settings import max_tool_calls
-from services.chat.tools import (
+from backend.services.chat.planning import _direct_simple_response, build_agent_plan, classify_message
+from backend.services.chat.settings import max_tool_calls
+from backend.services.chat.tools import (
     _compare_and_record,
     _explore_and_record,
     _get_and_record_detail,
     _make_execute_tool,
     _search_and_merge,
 )
-from services.chat.trace import _add_step
-from services.chat.types import AgentEventHandler, AgentRunState, ChatHistory
+from backend.services.chat.trace import _add_step
+from backend.services.chat.types import AgentEventHandler, AgentRunState, ChatHistory
 
 
 def _answer_with_tools(

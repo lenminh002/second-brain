@@ -5,14 +5,14 @@ import os
 from copy import deepcopy
 from typing import Any
 
-from storage_backends.base import StorageBackend
-from storage_backends.utils import coerce_graph, merge_graph
+from backend.storage_backends.base import StorageBackend
+from backend.storage_backends.utils import coerce_graph, merge_graph
 
 
 def _seed_embeddings(texts: list[str]) -> list[list[float]]:
     """Compute real embeddings for seed data so dimensions match live queries."""
     try:
-        from embeddings import embed_texts
+        from backend.embeddings import embed_texts
         return embed_texts(texts)
     except Exception:
         # If embedding fails at seed time, return empty lists — chunks will be
@@ -100,7 +100,7 @@ class MemoryStorageBackend(StorageBackend):
         rag_summary = self.sources["mock-source-rag"]["summary"]
         attention_summary = self.sources["mock-source-attention"]["summary"]
         try:
-            from embeddings import current_embedding_model
+            from backend.embeddings import current_embedding_model
             embeddings = _seed_embeddings([rag_summary, attention_summary])
             model = current_embedding_model()
         except Exception:

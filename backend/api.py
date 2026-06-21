@@ -9,11 +9,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv()
 
-from services.account_service import cleanup_stuck_processing_sources
-from services.auth_middleware import FirebaseAuthMiddleware
-from routers import chat, misc, sources
-from embeddings import embed_text
-from services.chat.llm import answer_with_tools
+from backend.services.account_service import cleanup_stuck_processing_sources
+from backend.services.auth_middleware import FirebaseAuthMiddleware
+from backend.routers import chat, misc, sources
+from backend.embeddings import embed_text
+from backend.services.chat.llm import answer_with_tools
 
 
 @asynccontextmanager
@@ -39,4 +39,4 @@ app.include_router(misc.router)
 
 
 if __name__ == "__main__":
-    uvicorn.run("api:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("backend.api:app", host="0.0.0.0", port=8000, reload=True)

@@ -8,7 +8,7 @@ from typing import Any
 
 from dotenv import load_dotenv
 
-from storage_backends import FirestoreStorageBackend, MemoryStorageBackend, StorageBackend
+from backend.storage_backends import FirestoreStorageBackend, MemoryStorageBackend, StorageBackend
 
 load_dotenv(dotenv_path=Path.cwd() / ".env")
 

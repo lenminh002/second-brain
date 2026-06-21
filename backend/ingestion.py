@@ -4,11 +4,11 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Literal
 
-from embeddings import current_embedding_model, embed_texts
-from extractors import extract_pdf_text
-from google_drive import upload_pdf_to_drive
-from services.enrichment import enrich_content
-from storage import (
+from backend.embeddings import current_embedding_model, embed_texts
+from backend.extractors import extract_pdf_text
+from backend.google_drive import upload_pdf_to_drive
+from backend.services.enrichment import enrich_content
+from backend.storage import (
     append_source,
     commit_source_artifacts,
     load_graph,

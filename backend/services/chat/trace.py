@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from services.chat.types import AgentEventHandler, AgentRunState
+from backend.services.chat.types import AgentEventHandler, AgentRunState
 
 
 def _agent_step(

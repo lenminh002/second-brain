@@ -3,9 +3,9 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
-from firebase_admin_app import get_firebase_admin_app
-from storage_backends.base import StorageBackend
-from storage_backends.utils import coerce_graph, coerce_list, merge_graph
+from backend.firebase_admin_app import get_firebase_admin_app
+from backend.storage_backends.base import StorageBackend
+from backend.storage_backends.utils import coerce_graph, coerce_list, merge_graph
 
 
 class FirestoreStorageBackend(StorageBackend):

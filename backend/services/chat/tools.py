@@ -3,15 +3,15 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from services.chat.evidence import (
+from backend.services.chat.evidence import (
     _merge_citations,
     _merge_graph_context,
     _source_ids_from_citations,
 )
-from services.chat.settings import max_tool_calls
-from services.chat.trace import _add_step
-from services.chat.types import AgentEventHandler, AgentRunState
-from services.retrieval import (
+from backend.services.chat.settings import max_tool_calls
+from backend.services.chat.trace import _add_step
+from backend.services.chat.types import AgentEventHandler, AgentRunState
+from backend.services.retrieval import (
     compare_sources,
     explore_graph_connections,
     get_source_detail,

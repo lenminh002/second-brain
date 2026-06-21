@@ -14,7 +14,7 @@ TEST_ACCOUNT_ID = "mock-user"
 
 
 def _patch_storage(tmp_path: Path, monkeypatch) -> None:
-    import storage
+    from backend import storage
 
     monkeypatch.setenv("SECONDBRAIN_STORAGE_BACKEND", "memory")
     monkeypatch.setenv("SECONDBRAIN_SEED_MOCK_DATA", "0")
@@ -26,7 +26,7 @@ def _client(tmp_path: Path, monkeypatch) -> TestClient:
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
-    import api
+    from backend import api
 
     importlib.reload(api)
     client = TestClient(api.app)
@@ -101,7 +101,7 @@ def test_edit_ready_source_regenerates_artifacts(tmp_path: Path, monkeypatch) ->
             "social_post": "Old memory about apples.",
         }
 
-    monkeypatch.setattr("ingestion.enrich_content", fake_enrichment)
+    monkeypatch.setattr("backend.ingestion.enrich_content", fake_enrichment)
     response = client.patch(
         f"/sources/{source_id}",
         json={"content": "New memory content about oranges."},
@@ -115,7 +115,7 @@ def test_edit_ready_source_regenerates_artifacts(tmp_path: Path, monkeypatch) ->
     assert detail["status"] == "ready"
     assert detail["progress_stage"] == "complete"
 
-    import storage
+    from backend import storage
 
     chunks = storage.load_chunks(TEST_ACCOUNT_ID)
     assert any(chunk["section"] == "Notes" and "oranges" in chunk["text"] for chunk in chunks)
@@ -155,7 +155,7 @@ def test_edit_source_rejects_invalid_requests(tmp_path: Path, monkeypatch) -> No
     empty_response = client.patch(f"/sources/{source_id}", json={"content": "   "})
     missing_response = client.patch("/sources/missing", json={"content": "Updated content"})
 
-    import storage
+    from backend import storage
 
     processing_source = {
         "id": "processing-source",
@@ -196,7 +196,7 @@ def test_account_endpoint_returns_mock_account(tmp_path: Path, monkeypatch) -> N
 
 
 def test_posts_endpoint_filters_by_account(tmp_path: Path, monkeypatch) -> None:
-    import storage
+    from backend import storage
 
     _patch_storage(tmp_path, monkeypatch)
     storage.save_posts(
@@ -226,7 +226,7 @@ def test_posts_endpoint_filters_by_account(tmp_path: Path, monkeypatch) -> None:
         ],
     )
 
-    import api
+    from backend import api
 
     importlib.reload(api)
     client = TestClient(api.app)
@@ -251,9 +251,9 @@ def test_invalid_note_does_not_persist_source(tmp_path: Path, monkeypatch) -> No
 
 def test_pdf_ingestion_uses_extractor(tmp_path: Path, monkeypatch) -> None:
     _patch_storage(tmp_path, monkeypatch)
-    monkeypatch.setattr("ingestion.extract_pdf_text", lambda _: "A paper about graph retrieval.")
+    monkeypatch.setattr("backend.ingestion.extract_pdf_text", lambda _: "A paper about graph retrieval.")
     monkeypatch.setattr(
-        "ingestion.upload_pdf_to_drive",
+        "backend.ingestion.upload_pdf_to_drive",
         lambda file_bytes, filename: {
             "provider": "google_drive",
             "drive_file_id": "drive-file-1",
@@ -267,7 +267,7 @@ def test_pdf_ingestion_uses_extractor(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
-    import api
+    from backend import api
 
     importlib.reload(api)
     client = TestClient(api.app)
@@ -300,7 +300,7 @@ def test_pdf_drive_upload_failure_records_failed_source_without_artifacts(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    import storage
+    from backend import storage
 
     _patch_storage(tmp_path, monkeypatch)
 
@@ -310,12 +310,12 @@ def test_pdf_drive_upload_failure_records_failed_source_without_artifacts(
     def fail_extract(*_: object) -> str:
         raise AssertionError("PDF extraction should not run if Drive upload fails.")
 
-    monkeypatch.setattr("ingestion.upload_pdf_to_drive", fail_upload)
-    monkeypatch.setattr("ingestion.extract_pdf_text", fail_extract)
+    monkeypatch.setattr("backend.ingestion.upload_pdf_to_drive", fail_upload)
+    monkeypatch.setattr("backend.ingestion.extract_pdf_text", fail_extract)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
-    import api
+    from backend import api
 
     importlib.reload(api)
     client = TestClient(api.app)
@@ -345,14 +345,14 @@ def test_ingestion_failure_records_failed_source_with_progress(
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
-    import ingestion
+    from backend import ingestion
 
     def fail_enrichment(*_: object) -> dict:
         raise RuntimeError("enrichment exploded")
 
     monkeypatch.setattr(ingestion, "enrich_content", fail_enrichment)
 
-    import api
+    from backend import api
 
     importlib.reload(api)
     client = TestClient(api.app)
@@ -390,13 +390,13 @@ def test_missing_pdf_does_not_persist_source(tmp_path: Path, monkeypatch) -> Non
 
 
 def test_parallel_note_ingestion_preserves_all_artifacts(tmp_path: Path, monkeypatch) -> None:
-    import storage
+    from backend import storage
 
     _patch_storage(tmp_path, monkeypatch)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
-    import ingestion
+    from backend import ingestion
 
     importlib.reload(ingestion)
 
@@ -475,7 +475,7 @@ def test_chat_rejects_invalid_history(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_chat_agent_tools_search_and_fetch_source_detail(tmp_path: Path, monkeypatch) -> None:
-    import storage
+    from backend import storage
 
     _patch_storage(tmp_path, monkeypatch)
     storage.save_sources(
@@ -508,7 +508,7 @@ def test_chat_agent_tools_search_and_fetch_source_detail(tmp_path: Path, monkeyp
     )
     storage.save_graph(TEST_ACCOUNT_ID, {"nodes": [], "edges": []})
 
-    import api
+    from backend import api
 
     importlib.reload(api)
     monkeypatch.setattr(api, "embed_text", lambda _: [1.0, 0.0])
@@ -550,7 +550,7 @@ def test_chat_simple_message_skips_research_loop(tmp_path: Path, monkeypatch) ->
 
 
 def test_chat_agentic_loop_emits_core_stages(tmp_path: Path, monkeypatch) -> None:
-    import storage
+    from backend import storage
 
     _patch_storage(tmp_path, monkeypatch)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
@@ -596,7 +596,7 @@ def test_chat_agentic_loop_emits_core_stages(tmp_path: Path, monkeypatch) -> Non
         },
     )
 
-    import api
+    from backend import api
 
     importlib.reload(api)
     monkeypatch.setattr(api, "embed_text", lambda _: [1.0, 0.0])
@@ -611,7 +611,7 @@ def test_chat_agentic_loop_emits_core_stages(tmp_path: Path, monkeypatch) -> Non
 
 
 def test_chat_weak_evidence_triggers_one_revision(tmp_path: Path, monkeypatch) -> None:
-    import storage
+    from backend import storage
 
     _patch_storage(tmp_path, monkeypatch)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
@@ -646,7 +646,7 @@ def test_chat_weak_evidence_triggers_one_revision(tmp_path: Path, monkeypatch) -
     )
     storage.save_graph(TEST_ACCOUNT_ID, {"nodes": [], "edges": []})
 
-    import api
+    from backend import api
 
     importlib.reload(api)
     monkeypatch.setattr(api, "embed_text", lambda _: [1.0, 0.0])
@@ -661,8 +661,8 @@ def test_chat_weak_evidence_triggers_one_revision(tmp_path: Path, monkeypatch) -
 
 
 def test_chat_loop_respects_tool_call_cap(tmp_path: Path, monkeypatch) -> None:
-    import storage
-    from services import chat_service
+    from backend import storage
+    from backend.services import chat_service
 
     _patch_storage(tmp_path, monkeypatch)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
@@ -683,7 +683,7 @@ def test_chat_loop_respects_tool_call_cap(tmp_path: Path, monkeypatch) -> None:
     )
     storage.save_graph(TEST_ACCOUNT_ID, {"nodes": [], "edges": []})
 
-    import api
+    from backend import api
 
     importlib.reload(api)
     monkeypatch.setattr(api, "embed_text", lambda _: [1.0, 0.0])
@@ -717,7 +717,7 @@ def test_chat_stream_emits_agent_steps_before_done(tmp_path: Path, monkeypatch) 
 
 
 def test_chat_expands_context_with_graph_neighbors(tmp_path: Path, monkeypatch) -> None:
-    import storage
+    from backend import storage
 
     _patch_storage(tmp_path, monkeypatch)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
@@ -806,7 +806,7 @@ def test_chat_expands_context_with_graph_neighbors(tmp_path: Path, monkeypatch) 
         }
     )
 
-    import api
+    from backend import api
 
     importlib.reload(api)
     monkeypatch.setattr(api, "embed_text", lambda _: [1.0, 0.0])
@@ -829,7 +829,7 @@ def test_chat_expands_context_with_graph_neighbors(tmp_path: Path, monkeypatch) 
 
 
 def test_chat_graphrag_falls_back_without_graph(tmp_path: Path, monkeypatch) -> None:
-    import storage
+    from backend import storage
 
     _patch_storage(tmp_path, monkeypatch)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
@@ -849,7 +849,7 @@ def test_chat_graphrag_falls_back_without_graph(tmp_path: Path, monkeypatch) -> 
     )
     storage.save_graph(TEST_ACCOUNT_ID, {"nodes": [], "edges": []})
 
-    import api
+    from backend import api
 
     importlib.reload(api)
     monkeypatch.setattr(api, "embed_text", lambda _: [1.0, 0.0])
@@ -866,7 +866,7 @@ def test_chat_graphrag_falls_back_without_graph(tmp_path: Path, monkeypatch) -> 
 def test_chat_skips_chunks_with_incompatible_embedding_dimensions(
     tmp_path: Path, monkeypatch
 ) -> None:
-    import storage
+    from backend import storage
 
     _patch_storage(tmp_path, monkeypatch)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
@@ -894,7 +894,7 @@ def test_chat_skips_chunks_with_incompatible_embedding_dimensions(
     )
     storage.save_graph(TEST_ACCOUNT_ID, {"nodes": [], "edges": []})
 
-    import api
+    from backend import api
 
     importlib.reload(api)
     monkeypatch.setattr(api, "embed_text", lambda _: [1.0, 0.0])
@@ -908,7 +908,7 @@ def test_chat_skips_chunks_with_incompatible_embedding_dimensions(
 
 
 def test_firestore_backend_requires_credentials(tmp_path: Path, monkeypatch) -> None:
-    import storage
+    from backend import storage
 
     monkeypatch.setenv("SECONDBRAIN_STORAGE_BACKEND", "firestore")
     monkeypatch.setenv("FIREBASE_SERVICE_ACCOUNT_FILE", "")
@@ -925,7 +925,7 @@ def test_firestore_backend_requires_credentials(tmp_path: Path, monkeypatch) -> 
 
 
 def test_firebase_admin_app_initialization_is_thread_safe(tmp_path: Path, monkeypatch) -> None:
-    import firebase_admin_app
+    from backend import firebase_admin_app
 
     calls = {"get": 0, "initialize": 0}
     fake_firebase_admin = types.ModuleType("firebase_admin")
@@ -962,7 +962,7 @@ def test_firebase_admin_app_initialization_is_thread_safe(tmp_path: Path, monkey
 
 
 def test_firebase_admin_app_accepts_inline_service_account_json(monkeypatch) -> None:
-    import firebase_admin_app
+    from backend import firebase_admin_app
 
     calls: dict[str, object] = {}
     fake_firebase_admin = types.ModuleType("firebase_admin")
@@ -1006,7 +1006,7 @@ def test_firebase_admin_app_accepts_inline_service_account_json(monkeypatch) -> 
 
 
 def test_firebase_admin_app_allows_firestore_emulator(monkeypatch) -> None:
-    import firebase_admin_app
+    from backend import firebase_admin_app
 
     calls: dict[str, object] = {}
     fake_firebase_admin = types.ModuleType("firebase_admin")
@@ -1107,9 +1107,9 @@ class _FakeFirestoreDb:
 
 
 def test_note_ingestion_persists_artifacts_to_firestore(monkeypatch) -> None:
-    import ingestion
-    import storage
-    from storage_backends.firestore import FirestoreStorageBackend
+    from backend import ingestion
+    from backend import storage
+    from backend.storage_backends.firestore import FirestoreStorageBackend
 
     fake_db = _FakeFirestoreDb()
     monkeypatch.setenv("SECONDBRAIN_STORAGE_BACKEND", "firestore")

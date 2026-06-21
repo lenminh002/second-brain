@@ -4,7 +4,7 @@ import json
 from collections.abc import Callable, Generator
 from typing import Any
 
-from services.anthropic_client import (
+from backend.services.anthropic_client import (
     MODEL_NAME,
     _client,
     _message_content_to_params,

@@ -5,10 +5,10 @@ from typing import Any
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from starlette.datastructures import UploadFile
 
-from ingestion import create_processing_source, edit_source_content, process_source
-from services.account_service import current_account
-from services.retrieval import _sort_newest
-from storage import load_sources
+from backend.ingestion import create_processing_source, edit_source_content, process_source
+from backend.services.account_service import current_account
+from backend.services.retrieval import _sort_newest
+from backend.storage import load_sources
 
 router = APIRouter()
 

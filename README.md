@@ -37,7 +37,7 @@ cp .env.example .env
 ## Run
 
 ```bash
-uv run uvicorn api:app --reload
+uv run uvicorn backend.api:app --reload
 ```
 
 In another terminal:
@@ -115,8 +115,8 @@ account id `mock-user`.
 ## CLI Ingestion
 
 ```bash
-uv run python ingest.py note --account-id "cli-user" --title "Transformers" --text "Self-attention connects tokens."
-uv run python ingest.py pdf --account-id "cli-user" --title "Paper" --file ./paper.pdf
+uv run python -m backend.ingest note --account-id "cli-user" --title "Transformers" --text "Self-attention connects tokens."
+uv run python -m backend.ingest pdf --account-id "cli-user" --title "Paper" --file ./paper.pdf
 ```
 
 ## Test

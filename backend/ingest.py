@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-from ingestion import ingest_source
+from backend.ingestion import ingest_source
 
 
 def main() -> None:

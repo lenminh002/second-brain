@@ -20,7 +20,7 @@ def min_evidence_score() -> float:
 
 
 def _facade_value(name: str, default: int | float) -> int | float:
-    facade = sys.modules.get("services.chat_service")
+    facade = sys.modules.get("backend.services.chat_service")
     if facade is not None and hasattr(facade, name):
         return getattr(facade, name)
     return default
