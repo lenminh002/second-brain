@@ -5,18 +5,15 @@ import { MobileNav, SidebarNav, TopBar } from "@/components/AppNavigation";
 import { ChatPanel } from "@/components/ChatPanel";
 import { DigestSourcePage } from "@/components/DigestSourcePage";
 import { HomeAside, HomeView } from "@/components/HomeView";
-import { LoginView } from "@/components/LoginView";
 import { NotesView } from "@/components/NotesView";
 import { ProfileView } from "@/components/ProfileView";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { createSource, fetchKnowledgeData, fetchSourceDetail, sendChatMessage } from "@/lib/api";
-import { useAuth } from "@/lib/auth";
 import { errorMessage } from "@/lib/format";
 import type { AccountRecord, ActiveView, ChatMessage, KnowledgeGraph, NotesMode, PostRecord, SourceDetail, SourceRecord, SourceType } from "@/types";
 
 export default function App() {
-  const { authError, getIdToken, isConfigured, isLoading, signInWithGoogle, signOutUser, user } = useAuth();
   const [account, setAccount] = useState<AccountRecord | null>(null);
   const [sources, setSources] = useState<SourceRecord[]>([]);
   const [posts, setPosts] = useState<PostRecord[]>([]);
@@ -37,9 +34,7 @@ export default function App() {
   const [isChatting, setIsChatting] = useState(false);
 
   async function refresh() {
-    if (!user) return;
-    const token = await getIdToken();
-    const data = await fetchKnowledgeData(token);
+    const data = await fetchKnowledgeData();
     setAccount(data.account);
     setSources(data.sources);
     setPosts(data.posts);
@@ -54,29 +49,19 @@ export default function App() {
   }
 
   useEffect(() => {
-    if (!user) {
-      setAccount(null);
-      setSources([]);
-      setPosts([]);
-      setGraph({ nodes: [], edges: [] });
-      setSelectedSourceId(null);
-      setSelectedSourceDetail(null);
-      return;
-    }
     refreshWithNotice();
-  }, [user]);
+  }, []);
 
   useEffect(() => {
-    if (!user || !selectedSourceId) {
+    if (!selectedSourceId) {
       setSelectedSourceDetail(null);
       return;
     }
 
-    getIdToken()
-      .then((token) => fetchSourceDetail(token, selectedSourceId))
+    fetchSourceDetail(selectedSourceId)
       .then(setSelectedSourceDetail)
       .catch((error: unknown) => setNotice(errorMessage(error)));
-  }, [getIdToken, selectedSourceId, user]);
+  }, [selectedSourceId]);
 
   async function submitSource(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -87,14 +72,13 @@ export default function App() {
     setIsSubmitting(true);
     setNotice("");
     try {
-      const token = await getIdToken();
       const formData = new FormData();
       formData.append("type", activeType);
       formData.append("title", title);
       if (activeType === "note") formData.append("text", noteText);
       if (activeType === "pdf" && pdfFile) formData.append("file", pdfFile);
 
-      const payload = await createSource(token, formData);
+      const payload = await createSource(formData);
       if (payload.status === "failed") {
         setNotice(payload.error || "Source failed to process.");
       } else {
@@ -122,8 +106,7 @@ export default function App() {
     setIsChatting(true);
     setChatLog((current) => [...current, { role: "user", text: message }]);
     try {
-      const token = await getIdToken();
-      const payload = await sendChatMessage(token, message);
+      const payload = await sendChatMessage(message);
       setChatLog((current) => [...current, { role: "assistant", text: payload.answer, citations: payload.citations || [] }]);
     } catch (error: unknown) {
       setChatLog((current) => [...current, { role: "assistant", text: errorMessage(error) }]);
@@ -150,21 +133,10 @@ export default function App() {
     <ChatPanel chatInput={chatInput} chatLog={chatLog} isChatting={isChatting} setChatInput={setChatInput} submitChat={submitChat} />
   );
 
-  if (isLoading || !user) {
-    return (
-      <LoginView
-        authError={authError}
-        isConfigured={isConfigured}
-        isLoading={isLoading}
-        signInWithGoogle={signInWithGoogle}
-      />
-    );
-  }
-
   return (
     <TooltipProvider>
       <div className="app-frame pb-20 lg:pb-0">
-        <TopBar account={account} signOutUser={signOutUser} />
+        <TopBar account={account} />
         <div className={activeView === "home" || activeView === "profile" ? "social-grid" : activeView === "digest" ? "digest-grid" : "notes-grid"}>
           <SidebarNav account={account} activeView={activeView} notesMode={notesMode} setActiveView={setActiveView} setNotesMode={setNotesMode} />
 

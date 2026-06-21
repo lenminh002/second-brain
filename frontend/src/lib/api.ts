@@ -2,20 +2,28 @@ import type { AccountRecord, ApiError, Citation, KnowledgeGraph, PostRecord, Sou
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
-function authHeaders(token: string) {
-  return { Authorization: `Bearer ${token}` };
+async function responseError(response: Response, fallback: string) {
+  try {
+    const payload = (await response.json()) as ApiError;
+    return new Error(payload.detail || fallback);
+  } catch {
+    return new Error(fallback);
+  }
 }
 
-export async function fetchKnowledgeData(token: string) {
+export async function fetchKnowledgeData() {
   const [accountResponse, sourceResponse, postResponse, graphResponse] = await Promise.all([
-    fetch(`${API_BASE_URL}/account`, { headers: authHeaders(token) }),
-    fetch(`${API_BASE_URL}/sources`, { headers: authHeaders(token) }),
-    fetch(`${API_BASE_URL}/posts`, { headers: authHeaders(token) }),
-    fetch(`${API_BASE_URL}/graph`, { headers: authHeaders(token) }),
+    fetch(`${API_BASE_URL}/account`),
+    fetch(`${API_BASE_URL}/sources`),
+    fetch(`${API_BASE_URL}/posts`),
+    fetch(`${API_BASE_URL}/graph`),
   ]);
 
-  if (!accountResponse.ok || !sourceResponse.ok || !postResponse.ok || !graphResponse.ok) {
-    throw new Error("Knowledge API returned an error.");
+  const failedResponse = [accountResponse, sourceResponse, postResponse, graphResponse].find(
+    (response) => !response.ok,
+  );
+  if (failedResponse) {
+    throw await responseError(failedResponse, "Knowledge API returned an error.");
   }
 
   return {
@@ -26,16 +34,15 @@ export async function fetchKnowledgeData(token: string) {
   };
 }
 
-export async function fetchSourceDetail(token: string, sourceId: string) {
-  const response = await fetch(`${API_BASE_URL}/sources/${sourceId}`, { headers: authHeaders(token) });
-  if (!response.ok) throw new Error("Source detail failed to load.");
+export async function fetchSourceDetail(sourceId: string) {
+  const response = await fetch(`${API_BASE_URL}/sources/${sourceId}`);
+  if (!response.ok) throw await responseError(response, "Source detail failed to load.");
   return (await response.json()) as SourceDetail;
 }
 
-export async function createSource(token: string, formData: FormData) {
+export async function createSource(formData: FormData) {
   const response = await fetch(`${API_BASE_URL}/sources`, {
     method: "POST",
-    headers: authHeaders(token),
     body: formData,
   });
   const payload = (await response.json()) as SourceRecord & ApiError;
@@ -43,10 +50,10 @@ export async function createSource(token: string, formData: FormData) {
   return payload;
 }
 
-export async function sendChatMessage(token: string, message: string) {
+export async function sendChatMessage(message: string) {
   const response = await fetch(`${API_BASE_URL}/chat`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ message }),
   });
   const payload = (await response.json()) as { answer: string; citations?: Citation[] } & ApiError;

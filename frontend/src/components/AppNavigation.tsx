@@ -5,7 +5,6 @@ import {
   Compass,
   GitBranch,
   Home,
-  LogOut,
   PenLine,
   Search,
   Settings,
@@ -31,13 +30,7 @@ export function Logo({ account }: { account: AccountRecord | null }) {
   );
 }
 
-export function TopBar({
-  account,
-  signOutUser,
-}: {
-  account: AccountRecord | null;
-  signOutUser: () => Promise<void>;
-}) {
+export function TopBar({ account }: { account: AccountRecord | null }) {
   return (
     <header className="sticky top-0 z-30 flex h-[74px] items-center justify-between border-b bg-background/95 px-5 backdrop-blur">
       <Logo account={account} />
@@ -53,9 +46,6 @@ export function TopBar({
           {account?.avatar_url && <AvatarImage alt={account.name} src={account.avatar_url} />}
           <AvatarFallback>{account?.initials || ""}</AvatarFallback>
         </Avatar>
-        <Button onClick={() => void signOutUser()} size="icon" variant="ghost">
-          <LogOut className="h-5 w-5" />
-        </Button>
       </div>
     </header>
   );

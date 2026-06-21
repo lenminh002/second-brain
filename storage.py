@@ -12,9 +12,9 @@ _BACKEND: StorageBackend | None = None
 
 
 def _create_backend() -> StorageBackend:
-    if os.getenv("SKYWATCH_STORAGE_BACKEND") == "memory":
-        return MemoryStorageBackend()
-    return FirestoreStorageBackend()
+    if os.getenv("SKYWATCH_STORAGE_BACKEND") == "firestore":
+        return FirestoreStorageBackend()
+    return MemoryStorageBackend()
 
 
 def _backend() -> StorageBackend:

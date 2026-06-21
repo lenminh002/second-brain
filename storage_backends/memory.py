@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+import os
 from copy import deepcopy
 from typing import Any
 
@@ -16,6 +17,112 @@ class MemoryStorageBackend(StorageBackend):
         self.posts: dict[str, dict[str, Any]] = {}
         self.graphs: dict[str, dict[str, list[dict[str, Any]]]] = {}
         self.accounts: dict[str, dict[str, str]] = {}
+        if os.getenv("SKYWATCH_SEED_MOCK_DATA", "1") != "0":
+            self._seed_mock_data()
+
+    def _seed_mock_data(self) -> None:
+        account_id = "mock-user"
+        self.accounts[account_id] = {
+            "id": account_id,
+            "name": "SecondBrain",
+            "handle": "mock-vault",
+            "initials": "SB",
+            "email": "mock@example.com",
+            "avatar_url": "",
+        }
+        self.sources = {
+            "mock-source-rag": {
+                "id": "mock-source-rag",
+                "account_id": account_id,
+                "type": "note",
+                "title": "GraphRAG Notes",
+                "source_url": None,
+                "status": "ready",
+                "error": None,
+                "created_at": "2026-06-20T18:00:00+00:00",
+                "content": "GraphRAG combines vector retrieval with graph neighborhoods to pull connected concepts into an answer.",
+                "summary": "Graph-aware retrieval improves chat context by following relationships between sources and concepts.",
+                "key_ideas": ["Rank chunks by semantic similarity", "Expand context through concept neighbors"],
+                "concepts": ["GraphRAG", "Retrieval", "Knowledge Graph"],
+                "claims": ["Graph structure can reveal useful adjacent context."],
+                "questions": ["Which concepts connect otherwise separate notes?"],
+            },
+            "mock-source-attention": {
+                "id": "mock-source-attention",
+                "account_id": account_id,
+                "type": "note",
+                "title": "Attention Refresher",
+                "source_url": None,
+                "status": "ready",
+                "error": None,
+                "created_at": "2026-06-20T17:30:00+00:00",
+                "content": "Attention lets a model weight relevant tokens so retrieved passages can be summarized with focus.",
+                "summary": "Attention highlights relevant token relationships for focused summarization.",
+                "key_ideas": ["Attention scores relationships", "Focused context helps generated answers"],
+                "concepts": ["Attention", "Retrieval"],
+                "claims": ["Attention helps models prioritize useful context."],
+                "questions": ["How should retrieved chunks be ordered before answering?"],
+            },
+        }
+        self.posts = {
+            "mock-post-rag": {
+                "id": "mock-post-rag",
+                "account_id": account_id,
+                "source_id": "mock-source-rag",
+                "source_title": "GraphRAG Notes",
+                "body": "GraphRAG is the difference between finding a matching note and following the trail of related ideas.",
+                "created_at": "2026-06-20T18:01:00+00:00",
+            },
+            "mock-post-attention": {
+                "id": "mock-post-attention",
+                "account_id": account_id,
+                "source_id": "mock-source-attention",
+                "source_title": "Attention Refresher",
+                "body": "Attention is a routing mechanism for focus: it helps a model decide which context deserves weight.",
+                "created_at": "2026-06-20T17:31:00+00:00",
+            },
+        }
+        self.chunks = {
+            "mock-chunk-rag": {
+                "id": "mock-chunk-rag",
+                "account_id": account_id,
+                "source_id": "mock-source-rag",
+                "source_title": "GraphRAG Notes",
+                "section": "Summary",
+                "text": self.sources["mock-source-rag"]["summary"],
+                "embedding": [1.0, 0.0],
+                "embedding_model": "mock",
+                "embedding_dim": 2,
+            },
+            "mock-chunk-attention": {
+                "id": "mock-chunk-attention",
+                "account_id": account_id,
+                "source_id": "mock-source-attention",
+                "source_title": "Attention Refresher",
+                "section": "Summary",
+                "text": self.sources["mock-source-attention"]["summary"],
+                "embedding": [0.8, 0.0],
+                "embedding_model": "mock",
+                "embedding_dim": 2,
+            },
+        }
+        self.graphs = {
+            account_id: {
+                "nodes": [
+                    {"id": "source-mock-source-rag", "label": "GraphRAG Notes", "type": "source"},
+                    {"id": "source-mock-source-attention", "label": "Attention Refresher", "type": "source"},
+                    {"id": "concept-retrieval", "label": "Retrieval", "type": "concept"},
+                    {"id": "concept-knowledge-graph", "label": "Knowledge Graph", "type": "concept"},
+                    {"id": "concept-attention", "label": "Attention", "type": "concept"},
+                ],
+                "edges": [
+                    {"source": "source-mock-source-rag", "target": "concept-retrieval", "relation": "mentions"},
+                    {"source": "source-mock-source-rag", "target": "concept-knowledge-graph", "relation": "mentions"},
+                    {"source": "source-mock-source-attention", "target": "concept-retrieval", "relation": "mentions"},
+                    {"source": "source-mock-source-attention", "target": "concept-attention", "relation": "mentions"},
+                ],
+            }
+        }
 
     def get_account(self, account_id: str) -> dict[str, str] | None:
         with self._lock:

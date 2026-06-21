@@ -9,28 +9,15 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-TEST_ACCOUNT_ID = "google-user-1"
-AUTH_HEADERS = {"Authorization": "Bearer test-token"}
+TEST_ACCOUNT_ID = "mock-user"
 
 
 def _patch_storage(tmp_path: Path, monkeypatch) -> None:
     import storage
 
     monkeypatch.setenv("SKYWATCH_STORAGE_BACKEND", "memory")
+    monkeypatch.setenv("SKYWATCH_SEED_MOCK_DATA", "0")
     storage.reset_backend_for_tests()
-
-
-def _patch_auth(api, monkeypatch, account_id: str = TEST_ACCOUNT_ID) -> None:
-    monkeypatch.setattr(
-        api,
-        "verify_firebase_token",
-        lambda _: {
-            "uid": account_id,
-            "email": f"{account_id}@example.com",
-            "name": "Test User",
-            "picture": "https://example.com/avatar.png",
-        },
-    )
 
 
 def _client(tmp_path: Path, monkeypatch) -> TestClient:
@@ -41,9 +28,7 @@ def _client(tmp_path: Path, monkeypatch) -> TestClient:
     import api
 
     importlib.reload(api)
-    _patch_auth(api, monkeypatch)
     client = TestClient(api.app)
-    client.headers.update(AUTH_HEADERS)
     return client
 
 
@@ -78,7 +63,7 @@ def test_note_ingestion_creates_knowledge_artifacts(tmp_path: Path, monkeypatch)
     assert any(node["type"] == "concept" for node in graph["nodes"])
 
 
-def test_account_endpoint_returns_google_account(tmp_path: Path, monkeypatch) -> None:
+def test_account_endpoint_returns_mock_account(tmp_path: Path, monkeypatch) -> None:
     client = _client(tmp_path, monkeypatch)
 
     response = client.get("/account")
@@ -86,25 +71,12 @@ def test_account_endpoint_returns_google_account(tmp_path: Path, monkeypatch) ->
     assert response.status_code == 200
     assert response.json() == {
         "id": TEST_ACCOUNT_ID,
-        "name": "Test User",
-        "handle": TEST_ACCOUNT_ID,
-        "initials": "TU",
-        "email": f"{TEST_ACCOUNT_ID}@example.com",
-        "avatar_url": "https://example.com/avatar.png",
+        "name": "SecondBrain",
+        "handle": "mock-vault",
+        "initials": "SB",
+        "email": "mock@example.com",
+        "avatar_url": "",
     }
-
-
-def test_unauthenticated_request_is_rejected(tmp_path: Path, monkeypatch) -> None:
-    _patch_storage(tmp_path, monkeypatch)
-
-    import api
-
-    importlib.reload(api)
-    client = TestClient(api.app)
-
-    response = client.get("/sources")
-
-    assert response.status_code == 401
 
 
 def test_posts_endpoint_filters_by_account(tmp_path: Path, monkeypatch) -> None:
@@ -141,9 +113,7 @@ def test_posts_endpoint_filters_by_account(tmp_path: Path, monkeypatch) -> None:
     import api
 
     importlib.reload(api)
-    _patch_auth(api, monkeypatch)
     client = TestClient(api.app)
-    client.headers.update(AUTH_HEADERS)
 
     response = client.get("/posts")
 
@@ -163,29 +133,6 @@ def test_invalid_note_does_not_persist_source(tmp_path: Path, monkeypatch) -> No
     assert client.get("/graph").json() == {"nodes": [], "edges": []}
 
 
-def test_source_detail_is_account_scoped(tmp_path: Path, monkeypatch) -> None:
-    client = _client(tmp_path, monkeypatch)
-    created = client.post(
-        "/sources",
-        json={
-            "type": "note",
-            "title": "Private Note",
-            "text": "This note belongs to one Google account.",
-        },
-    )
-    source_id = created.json()["id"]
-
-    import api
-
-    _patch_auth(api, monkeypatch, account_id="other-user")
-    other_client = TestClient(api.app)
-    other_client.headers.update(AUTH_HEADERS)
-
-    response = other_client.get(f"/sources/{source_id}")
-
-    assert response.status_code == 404
-
-
 def test_pdf_ingestion_uses_extractor(tmp_path: Path, monkeypatch) -> None:
     _patch_storage(tmp_path, monkeypatch)
     monkeypatch.setattr("ingestion.extract_pdf_text", lambda _: "A paper about graph retrieval.")
@@ -195,9 +142,7 @@ def test_pdf_ingestion_uses_extractor(tmp_path: Path, monkeypatch) -> None:
     import api
 
     importlib.reload(api)
-    _patch_auth(api, monkeypatch)
     client = TestClient(api.app)
-    client.headers.update(AUTH_HEADERS)
     response = client.post(
         "/sources",
         files={"file": ("paper.pdf", b"%PDF-1.4 fake", "application/pdf")},
@@ -368,10 +313,8 @@ def test_chat_expands_context_with_graph_neighbors(tmp_path: Path, monkeypatch) 
     import api
 
     importlib.reload(api)
-    _patch_auth(api, monkeypatch)
     monkeypatch.setattr(api, "embed_text", lambda _: [1.0, 0.0])
     client = TestClient(api.app)
-    client.headers.update(AUTH_HEADERS)
 
     response = client.post("/chat", json={"message": "How does attention connect to graph retrieval?"})
 
@@ -406,10 +349,8 @@ def test_chat_graphrag_falls_back_without_graph(tmp_path: Path, monkeypatch) -> 
     import api
 
     importlib.reload(api)
-    _patch_auth(api, monkeypatch)
     monkeypatch.setattr(api, "embed_text", lambda _: [1.0, 0.0])
     client = TestClient(api.app)
-    client.headers.update(AUTH_HEADERS)
 
     response = client.post("/chat", json={"message": "Does chat still work?"})
 
@@ -453,10 +394,8 @@ def test_chat_skips_chunks_with_incompatible_embedding_dimensions(
     import api
 
     importlib.reload(api)
-    _patch_auth(api, monkeypatch)
     monkeypatch.setattr(api, "embed_text", lambda _: [1.0, 0.0])
     client = TestClient(api.app)
-    client.headers.update(AUTH_HEADERS)
 
     response = client.post("/chat", json={"message": "Which chunk is compatible?"})
 
@@ -468,16 +407,19 @@ def test_chat_skips_chunks_with_incompatible_embedding_dimensions(
 def test_firestore_backend_requires_credentials(tmp_path: Path, monkeypatch) -> None:
     import storage
 
-    monkeypatch.delenv("SKYWATCH_STORAGE_BACKEND", raising=False)
+    monkeypatch.setenv("SKYWATCH_STORAGE_BACKEND", "firestore")
     monkeypatch.delenv("FIREBASE_SERVICE_ACCOUNT_FILE", raising=False)
     monkeypatch.delenv("GOOGLE_APPLICATION_CREDENTIALS", raising=False)
     storage.reset_backend_for_tests()
 
-    with pytest.raises(RuntimeError, match="Firebase credentials are required"):
+    with pytest.raises(
+        RuntimeError,
+        match="Firebase credentials are required|Firebase service account file was not found",
+    ):
         storage.load_sources(TEST_ACCOUNT_ID)
 
 
-def test_firebase_admin_app_initialization_is_thread_safe(monkeypatch) -> None:
+def test_firebase_admin_app_initialization_is_thread_safe(tmp_path: Path, monkeypatch) -> None:
     import firebase_admin_app
 
     calls = {"get": 0, "initialize": 0}
@@ -501,7 +443,9 @@ def test_firebase_admin_app_initialization_is_thread_safe(monkeypatch) -> None:
     fake_firebase_admin.initialize_app = initialize_app
     monkeypatch.setitem(sys.modules, "firebase_admin", fake_firebase_admin)
     monkeypatch.setitem(sys.modules, "firebase_admin.credentials", fake_credentials)
-    monkeypatch.setenv("FIREBASE_SERVICE_ACCOUNT_FILE", "/tmp/service-account.json")
+    service_account = tmp_path / "service-account.json"
+    service_account.write_text("{}")
+    monkeypatch.setenv("FIREBASE_SERVICE_ACCOUNT_FILE", str(service_account))
 
     importlib.reload(firebase_admin_app)
 
