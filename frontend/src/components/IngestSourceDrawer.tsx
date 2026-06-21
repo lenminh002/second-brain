@@ -75,27 +75,27 @@ export function IngestSourceDrawer({
                 Turn notes and papers into structured memory for your knowledge base.
               </DrawerDescription>
             </div>
-            <DrawerClose asChild>
-              <Button variant="ghost" size="icon" className="absolute right-0 top-0">
-                <X className="h-4 w-4" />
-              </Button>
-            </DrawerClose>
           </DrawerHeader>
 
-          <div className="grid gap-6 pt-5 md:grid-cols-[1fr_240px]">
-            <form className="space-y-4" onSubmit={submitSource}>
+          <form className="space-y-4 pt-5" onSubmit={submitSource}>
               <Tabs
                 value={activeType}
                 onValueChange={(value) => {
                   if (!isSubmitting) setActiveType(value as SourceType);
                 }}
               >
-                <TabsList className="grid w-full grid-cols-2">
+                <TabsList className="grid w-full grid-cols-4">
+                  <TabsTrigger disabled={isSubmitting} value="link">
+                    Link
+                  </TabsTrigger>
                   <TabsTrigger disabled={isSubmitting} value="note">
                     Note
                   </TabsTrigger>
                   <TabsTrigger disabled={isSubmitting} value="pdf">
                     PDF
+                  </TabsTrigger>
+                  <TabsTrigger disabled={isSubmitting} value="video">
+                    Video
                   </TabsTrigger>
                 </TabsList>
               </Tabs>
@@ -191,7 +191,6 @@ export function IngestSourceDrawer({
                 {isSubmitting ? "Ingesting source..." : "Ingest source"}
               </Button>
             </form>
-          </div>
         </div>
       </DrawerContent>
     </Drawer>
