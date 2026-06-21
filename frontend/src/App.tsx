@@ -1,12 +1,11 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { GitBranch } from "lucide-react";
 
-import { MobileNav, SidebarNav, TopBar } from "@/components/AppNavigation";
+import { MobileNav, SidebarNav, TopBar } from "@/components/navigation";
 import { ChatPanel } from "@/components/ChatPanel";
 import { IngestSourcePage } from "@/components/IngestSourcePage";
 import { HomeAside, HomeView } from "@/components/HomeView";
 import { NotesView } from "@/components/NotesView";
-import { ProfileView } from "@/components/ProfileView";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { createSource, fetchKnowledgeData, fetchSourceDetail, sendChatMessage } from "@/lib/api";
@@ -169,8 +168,8 @@ export default function App() {
       <div className="app-frame pb-20 lg:pb-0">
         <TopBar account={account} />
         <div
-          className={activeView === "home" || activeView === "profile" ? "social-grid" : activeView === "ingest" ? "ingest-grid" : "notes-grid"}
-          style={{ 
+          className={activeView === "home" ? "social-grid" : activeView === "ingest" ? "ingest-grid" : "notes-grid"}
+          style={{
             ["--sidebar-width" as string]: isSidebarMinimized ? "72px" : "260px",
             ["--chat-width" as string]: isChatMinimized ? "48px" : "360px"
           }}
@@ -179,8 +178,6 @@ export default function App() {
 
           {activeView === "home" ? (
             <HomeView account={account} notice={notice} posts={accountPosts} refresh={refreshWithNotice} setActiveView={setActiveView} />
-          ) : activeView === "profile" ? (
-            <ProfileView account={account} conceptCount={conceptCount} posts={accountPosts} readyCount={readyCount} setActiveView={setActiveView} sources={sources} />
           ) : activeView === "ingest" ? (
             <IngestSourcePage
               activeType={activeType}
@@ -215,7 +212,7 @@ export default function App() {
             />
           )}
 
-          {activeView === "home" || activeView === "profile" ? (
+          {activeView === "home" ? (
             <HomeAside account={account} setActiveView={setActiveView} setSelectedSourceId={setSelectedSourceId} sources={sources} />
           ) : activeView === "notes" ? (
             <aside className="sticky top-[74px] hidden h-[calc(100vh-74px)] lg:block">{chatPanel}</aside>

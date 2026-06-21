@@ -118,7 +118,7 @@ export function HomeAside({
           {!sources.length && <p className="text-sm text-muted-foreground">Ingest sources to get suggestions.</p>}
         </CardContent>
       </Card>
-      <p className="px-2 text-sm font-medium text-muted-foreground">2026 {account?.name || "Profile"} · Personal knowledge feed</p>
+      <p className="px-2 text-sm font-medium text-muted-foreground">2026 {account?.name || "Skywatch"} · Personal knowledge feed</p>
     </aside>
   );
 }

@@ -73,7 +73,7 @@ export function NotesView({
         </div>
       </div>
 
-      <div 
+      <div
         className="grid h-[calc(100vh-128px)] grid-cols-1 @2xl:grid-cols-[var(--vault-width,280px)_minmax(0,1fr)] transition-[grid-template-columns] duration-300"
         style={{ "--vault-width": isVaultMinimized ? "48px" : "280px" } as React.CSSProperties}
       >
@@ -87,57 +87,57 @@ export function NotesView({
             </div>
           ) : (
             <>
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                className="absolute top-2 right-2 z-10 h-8 w-8 hidden @2xl:flex" 
+              <Button
+                variant="ghost"
+                size="icon"
+                className="absolute top-2 right-2 z-10 h-8 w-8 hidden @2xl:flex"
                 onClick={() => setIsVaultMinimized(true)}
               >
                 <ChevronLeft className="h-4 w-4 text-muted-foreground" />
               </Button>
               <ScrollArea className="h-full max-h-[320px] @2xl:max-h-none">
-            <div className="space-y-5 p-4">
-              <div>
-                <div className="mb-2 flex items-center gap-2 text-sm font-bold">
-                  <FileText className="h-4 w-4" />
-                  Vault
-                </div>
-                <div className="space-y-4">
-                  {(["note", "pdf", "youtube"] as const).map((type) => (
-                    <div key={type}>
-                      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{type}</div>
-                      <div className="space-y-1">
-                        {sourcesByType[type].length ? (
-                          sourcesByType[type].map((source) => (
-                            <button
-                              className={cn(
-                                "w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-muted",
-                                selectedSourceId === source.id && "bg-muted",
-                              )}
-                              key={source.id}
-                              onClick={() => { setSelectedSourceId(source.id); setNotesMode("note"); }}
-                              type="button"
-                            >
-                              <span className="flex w-full items-start justify-between gap-2 min-w-0">
-                                <span className="min-w-0">
-                                  <span className="block truncate font-medium">{source.title}</span>
-                                  <span className="text-xs text-muted-foreground">{formatDate(source.created_at)}</span>
-                                </span>
-                                <StatusBadge status={source.status} />
-                              </span>
-                            </button>
-                          ))
-                        ) : (
-                          <div className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">No {type} sources</div>
-                        )}
-                      </div>
+                <div className="space-y-5 p-4">
+                  <div>
+                    <div className="mb-2 flex items-center gap-2 text-sm font-bold">
+                      <FileText className="h-4 w-4" />
+                      Vault
                     </div>
-                  ))}
+                    <div className="space-y-4">
+                      {(["note", "pdf", "youtube"] as const).map((type) => (
+                        <div key={type}>
+                          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{type}</div>
+                          <div className="space-y-1">
+                            {sourcesByType[type].length ? (
+                              sourcesByType[type].map((source) => (
+                                <button
+                                  className={cn(
+                                    "w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-muted",
+                                    selectedSourceId === source.id && "bg-muted",
+                                  )}
+                                  key={source.id}
+                                  onClick={() => { setSelectedSourceId(source.id); setNotesMode("note"); }}
+                                  type="button"
+                                >
+                                  <span className="flex w-full items-start justify-between gap-2 min-w-0">
+                                    <span className="min-w-0">
+                                      <span className="block truncate font-medium">{source.title}</span>
+                                      <span className="text-xs text-muted-foreground">{formatDate(source.created_at)}</span>
+                                    </span>
+                                    <StatusBadge status={source.status} />
+                                  </span>
+                                </button>
+                              ))
+                            ) : (
+                              <div className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">No {type} sources</div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
-          </ScrollArea>
-          </>
+              </ScrollArea>
+            </>
           )}
         </aside>
 
@@ -152,10 +152,7 @@ export function NotesView({
                       <h2 className="text-2xl font-black">Knowledge Graph</h2>
                       <p className="text-sm text-muted-foreground">Graphified concepts from the current knowledge base.</p>
                     </div>
-                    <Button onClick={() => setNotesMode("graph")}>
-                      <GitBranch className="h-4 w-4" />
-                      Graphify
-                    </Button>
+
                   </div>
                   <GraphView graph={graph} onRefresh={refreshGraph} />
                 </div>
