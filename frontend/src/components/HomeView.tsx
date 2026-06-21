@@ -25,14 +25,14 @@ export function HomeView({
   onIngestClick: () => void;
 }) {
   return (
-    <main className="min-h-[calc(100vh-74px)] border-r">
-      <div className="flex h-14 items-center justify-between border-b px-6">
+    <main className="min-h-[calc(100vh-74px)]">
+      <ScrollArea className="h-[calc(100vh-128px)]">
+      <div className="flex h-14 items-center justify-between px-6">
         <h1 className="font-bold">Home</h1>
         <Button onClick={refresh} size="icon" variant="outline">
           <RefreshCcw className="h-4 w-4" />
         </Button>
       </div>
-      <ScrollArea className="h-[calc(100vh-128px)]">
         <div className="mx-auto max-w-2xl space-y-4 p-5">
           {notice && <div className="rounded-lg border border-destructive/25 bg-destructive/5 p-3 text-sm text-destructive break-words">{notice}</div>}
           {posts.length ? (

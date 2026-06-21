@@ -274,7 +274,11 @@ def test_pdf_ingestion_uses_extractor(tmp_path: Path, monkeypatch) -> None:
     response = client.post(
         "/sources",
         files={"file": ("paper.pdf", b"%PDF-1.4 fake", "application/pdf")},
-        data={"type": "pdf", "title": "Graph Paper"},
+        data={
+            "type": "pdf",
+            "title": "Graph Paper",
+            "thumbnail_url": "https://example.com/thumb.png",
+        },
     )
 
     assert response.status_code == 200
@@ -283,6 +287,9 @@ def test_pdf_ingestion_uses_extractor(tmp_path: Path, monkeypatch) -> None:
     assert source["status"] == "processing"
     assert detail["status"] == "ready"
     assert detail["progress_percent"] == 100
+    assert detail["thumbnail_url"] == "https://example.com/thumb.png"
+    posts = client.get("/posts").json()
+    assert posts[0]["thumbnail_url"] == "https://example.com/thumb.png"
     assert "graph retrieval" in detail["content"]
     assert detail["source_url"] == "https://drive.google.com/file/d/drive-file-1/view"
     assert detail["metadata"]["original_file"] == {

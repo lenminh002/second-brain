@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { GitBranch } from "lucide-react";
+import { GitBranch, FileText } from "lucide-react";
 
 import { MobileNav, SidebarNav, TopBar } from "@/components/navigation";
 import { ChatPanel } from "@/components/ChatPanel";
@@ -8,12 +8,16 @@ import { HomeAside, HomeView } from "@/components/HomeView";
 import { NotesView } from "@/components/NotesView";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { StatusBadge } from "@/components/StatusBadge";
+import { cn } from "@/lib/utils";
+import { formatDate } from "@/lib/format";
+import type { ActiveView, NotesMode, SourceRecord, SourceType } from "@/types";
 
 import { useKnowledgeBase } from "@/hooks/useKnowledgeBase";
 import { useSourceIngestion } from "@/hooks/useSourceIngestion";
 import { useChatSession } from "@/hooks/useChatSession";
-import type { ActiveView, NotesMode, SourceRecord, SourceType } from "@/types";
-
 import { useAuth } from "@/hooks/useAuth";
 import { LoginView } from "@/components/LoginView";
 
@@ -120,8 +124,8 @@ function AuthenticatedApp() {
       archiveChatHistory={archiveAndClearChatHistory}
       isArchivingChat={isArchivingChat}
       chatArchiveError={chatArchiveError}
-      isMinimized={isChatMinimized}
-      toggleMinimize={() => setIsChatMinimized((v) => !v)}
+      isMinimized={activeView === "notes" ? false : isChatMinimized}
+      toggleMinimize={activeView === "notes" ? undefined : () => setIsChatMinimized((v) => !v)}
     />
   );
 
@@ -133,7 +137,7 @@ function AuthenticatedApp() {
           className={activeView === "home" ? "social-grid" : activeView === "ingest" ? "ingest-grid" : activeView === "chat" ? "chat-grid" : "notes-grid"}
           style={{
             ["--sidebar-width" as string]: isSidebarMinimized ? "72px" : "260px",
-            ["--chat-width" as string]: isChatMinimized ? "48px" : "360px"
+            ["--chat-width" as string]: (activeView === "notes" ? false : isChatMinimized) ? "48px" : "360px"
           }}
         >
           <SidebarNav
@@ -196,8 +200,64 @@ function AuthenticatedApp() {
               sources={sources}
             />
           ) : activeView === "notes" ? (
-            <aside className="sticky top-[74px] hidden h-[calc(100vh-74px)] lg:block">
-              {chatPanel}
+            <aside className="sticky top-[74px] hidden h-[calc(100vh-74px)] lg:block border-l bg-background w-[var(--chat-width,360px)]">
+              <Tabs defaultValue="chat" className="h-full flex flex-col">
+                <TabsList className="grid w-full grid-cols-2 rounded-none border-b bg-muted/30 shrink-0">
+                  <TabsTrigger value="chat" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent">
+                    AI Chat
+                  </TabsTrigger>
+                  <TabsTrigger value="vault" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent">
+                    Vault
+                  </TabsTrigger>
+                </TabsList>
+                <TabsContent value="chat" className="flex-1 min-h-0 m-0 p-0">
+                  {chatPanel}
+                </TabsContent>
+                <TabsContent value="vault" className="flex-1 min-h-0 m-0 p-0">
+                  <ScrollArea className="h-full">
+                    <div className="space-y-5 p-4">
+                      <div>
+                        <div className="flex items-center gap-2 text-lg font-bold">
+                          <FileText className="h-6 w-6" />
+                          Vault
+                        </div>
+                        <div className="space-y-4 mt-6">
+                          {(["note", "pdf"] as const).map((type) => (
+                            <div key={type}>
+                              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{type}</div>
+                              <div className="space-y-1">
+                                {sourcesByType[type].length ? (
+                                  sourcesByType[type].map((source) => (
+                                    <button
+                                      className={cn(
+                                        "w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-muted transition-colors duration-150",
+                                        selectedSourceId === source.id && "bg-muted font-medium",
+                                      )}
+                                      key={source.id}
+                                      onClick={() => { setSelectedSourceId(source.id); setNotesMode("note"); }}
+                                      type="button"
+                                    >
+                                      <span className="flex w-full items-start justify-between gap-2 min-w-0">
+                                        <span className="min-w-0">
+                                          <span className="block truncate font-medium">{source.title}</span>
+                                          <span className="text-xs text-muted-foreground">{formatDate(source.created_at)}</span>
+                                        </span>
+                                        <StatusBadge status={source.status} />
+                                      </span>
+                                    </button>
+                                  ))
+                                ) : (
+                                  <div className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">No {type} sources</div>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </ScrollArea>
+                </TabsContent>
+              </Tabs>
             </aside>
           ) : null}
         </div>
