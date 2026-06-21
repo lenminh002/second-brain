@@ -47,7 +47,7 @@ def _fallback_enrichment(title: str, content: str) -> dict[str, Any]:
         "concepts": concepts or ["Knowledge base"],
         "claims": usable[:4],
         "questions": ["What should I connect this to next?"],
-        "social_post": f"Added a new note on {title}: {summary[:220]}",
+        "social_post": f"Insights from '{title}': {summary[:600]}",
         "tags": [],
     }
 
@@ -82,7 +82,7 @@ Return ONLY valid JSON in this shape:
   "concepts": ["canonical concept/entity name"],
   "claims": ["claim or useful assertion"],
   "questions": ["open question for future learning"],
-  "social_post": "one social-media style post in first person, under 900 characters",
+  "social_post": "A detailed, highly informative, and engaging social-media style post written in the first person (between 600 and 900 characters). It must dive straight into the key message/insights of the content, explain why it is valuable, outline the major takeaways, and avoid generic templates or introductory phrases (like 'I just read' or 'Here is a note'). Make it rich with actual information.",
   "tags": ["broad-topic-tag"]
 }}
 
