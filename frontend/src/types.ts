@@ -20,6 +20,9 @@ export type SourceRecord = {
   status: SourceStatus;
   error: string | null;
   created_at: string;
+  progress_stage?: string;
+  progress_label?: string;
+  progress_percent?: number;
   // Enrichment fields (present on list items; always present on SourceDetail)
   summary?: string;
   key_ideas?: string[];
@@ -29,12 +32,12 @@ export type SourceRecord = {
 };
 
 export type SourceDetail = SourceRecord & {
-  content: string;
-  summary: string;
-  key_ideas: string[];
-  concepts: string[];
-  claims: string[];
-  questions: string[];
+  content?: string;
+  summary?: string;
+  key_ideas?: string[];
+  concepts?: string[];
+  claims?: string[];
+  questions?: string[];
 };
 
 export type PostRecord = {

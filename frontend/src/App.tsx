@@ -13,6 +13,12 @@ import { createSource, fetchKnowledgeData, fetchSourceDetail, sendChatMessage } 
 import { errorMessage } from "@/lib/format";
 import type { AccountRecord, ActiveView, ChatMessage, KnowledgeGraph, NotesMode, PostRecord, SourceDetail, SourceRecord, SourceType } from "@/types";
 
+const INGEST_POLL_INTERVAL_MS = 750;
+
+function wait(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
 export default function App() {
   const [account, setAccount] = useState<AccountRecord | null>(null);
   const [sources, setSources] = useState<SourceRecord[]>([]);
@@ -28,6 +34,7 @@ export default function App() {
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [ingestProgress, setIngestProgress] = useState<SourceRecord | null>(null);
   const [notice, setNotice] = useState("");
   const [chatInput, setChatInput] = useState("");
   const [chatLog, setChatLog] = useState<ChatMessage[]>([]);
@@ -65,11 +72,13 @@ export default function App() {
 
   async function submitSource(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (isSubmitting) return;
     if (activeType === "youtube") {
       setNotice("Video ingestion to be fixed.");
       return;
     }
     setIsSubmitting(true);
+    setIngestProgress(null);
     setNotice("");
     try {
       const formData = new FormData();
@@ -79,18 +88,29 @@ export default function App() {
       if (activeType === "pdf" && pdfFile) formData.append("file", pdfFile);
 
       const payload = await createSource(formData);
-      if (payload.status === "failed") {
-        setNotice(payload.error || "Source failed to process.");
+      setIngestProgress(payload);
+
+      let completedSource: SourceRecord | SourceDetail = payload;
+      while (completedSource.status === "processing") {
+        await wait(INGEST_POLL_INTERVAL_MS);
+        completedSource = await fetchSourceDetail(payload.id);
+        setIngestProgress(completedSource);
+      }
+
+      if (completedSource.status === "failed") {
+        setNotice(completedSource.error || "Source failed to process.");
+        await refresh();
       } else {
         setTitle("");
         setNoteText("");
         setYoutubeUrl("");
         setPdfFile(null);
-        setSelectedSourceId(payload.id);
+        await refresh();
+        setSelectedSourceId(completedSource.id);
         setActiveView("notes");
         setNotesMode("note");
+        setIngestProgress(null);
       }
-      await refresh();
     } catch (error: unknown) {
       setNotice(errorMessage(error));
     } finally {
@@ -147,6 +167,7 @@ export default function App() {
           ) : activeView === "digest" ? (
             <DigestSourcePage
               activeType={activeType}
+              ingestProgress={ingestProgress}
               isSubmitting={isSubmitting}
               noteText={noteText}
               notice={notice}

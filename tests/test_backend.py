@@ -46,13 +46,19 @@ def test_note_ingestion_creates_knowledge_artifacts(tmp_path: Path, monkeypatch)
 
     assert response.status_code == 200
     source = response.json()
-    assert source["status"] == "ready"
+    assert source["id"]
+    assert source["status"] == "processing"
+    assert source["progress_stage"] == "validating"
+    assert source["progress_percent"] == 5
 
     sources = client.get("/sources").json()
     posts = client.get("/posts").json()
     graph = client.get("/graph").json()
     detail = client.get(f"/sources/{source['id']}").json()
 
+    assert detail["status"] == "ready"
+    assert detail["progress_stage"] == "complete"
+    assert detail["progress_percent"] == 100
     assert sources[0]["title"] == "Transformers"
     assert detail["summary"]
     assert isinstance(detail["key_ideas"], list)
@@ -150,8 +156,51 @@ def test_pdf_ingestion_uses_extractor(tmp_path: Path, monkeypatch) -> None:
     )
 
     assert response.status_code == 200
-    assert response.json()["status"] == "ready"
-    assert "graph retrieval" in client.get(f"/sources/{response.json()['id']}").json()["content"]
+    source = response.json()
+    detail = client.get(f"/sources/{source['id']}").json()
+    assert source["status"] == "processing"
+    assert detail["status"] == "ready"
+    assert detail["progress_percent"] == 100
+    assert "graph retrieval" in detail["content"]
+
+
+def test_ingestion_failure_records_failed_source_with_progress(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _patch_storage(tmp_path, monkeypatch)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    import ingestion
+
+    def fail_enrichment(*_: object) -> dict:
+        raise RuntimeError("enrichment exploded")
+
+    monkeypatch.setattr(ingestion, "enrich_content", fail_enrichment)
+
+    import api
+
+    importlib.reload(api)
+    client = TestClient(api.app)
+
+    response = client.post(
+        "/sources",
+        json={
+            "type": "note",
+            "title": "Broken",
+            "text": "This note validates but fails while enriching.",
+        },
+    )
+
+    assert response.status_code == 200
+    source = response.json()
+    assert source["status"] == "processing"
+
+    detail = client.get(f"/sources/{source['id']}").json()
+    assert detail["status"] == "failed"
+    assert detail["error"] == "enrichment exploded"
+    assert detail["progress_stage"] == "enriching"
+    assert detail["progress_percent"] == 45
 
 
 def test_missing_pdf_does_not_persist_source(tmp_path: Path, monkeypatch) -> None:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal
 
 from embeddings import current_embedding_model, embed_texts
 from extractors import extract_pdf_text
@@ -16,6 +16,25 @@ from storage import (
 SOURCE_TYPES = {"note", "pdf", "youtube"}
 ACTIVE_SOURCE_TYPES = {"note", "pdf"}
 VIDEO_DEFERRED_MESSAGE = "Video ingestion is currently disabled and to be fixed."
+INGEST_PROGRESS: dict[str, tuple[str, int]] = {
+    "validating": ("Validating source", 5),
+    "reading_text": ("Reading note text", 20),
+    "extracting": ("Extracting PDF text", 20),
+    "enriching": ("Generating structured memory", 45),
+    "embedding": ("Creating retrieval chunks", 70),
+    "graphing": ("Updating knowledge graph", 90),
+    "complete": ("Ingestion complete", 100),
+}
+
+ProgressStage = Literal[
+    "validating",
+    "reading_text",
+    "extracting",
+    "enriching",
+    "embedding",
+    "graphing",
+    "complete",
+]
 
 
 class VideoIngestionDeferred(ValueError):
@@ -24,6 +43,15 @@ class VideoIngestionDeferred(ValueError):
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _set_progress(source: dict[str, Any], stage: ProgressStage, *, persist: bool = True) -> None:
+    label, percent = INGEST_PROGRESS[stage]
+    source["progress_stage"] = stage
+    source["progress_label"] = label
+    source["progress_percent"] = percent
+    if persist:
+        save_source_result(str(source["account_id"]), source)
 
 
 def _chunk_sections(
@@ -64,6 +92,7 @@ def _replace_source_artifacts(source: dict[str, Any], content: str, enrichment: 
         ("Questions", "\n".join(enrichment["questions"])),
     ]
     chunks = _chunk_sections(sections, source)
+    _set_progress(source, "embedding")
     embeddings = embed_texts([chunk["text"] for chunk in chunks]) if chunks else []
     embedding_model = current_embedding_model()
     for chunk, embedding in zip(chunks, embeddings):
@@ -79,6 +108,7 @@ def _replace_source_artifacts(source: dict[str, Any], content: str, enrichment: 
         "body": enrichment["social_post"],
         "created_at": now_iso(),
     }
+    _set_progress(source, "graphing")
     commit_source_artifacts(
         account_id,
         source,
@@ -106,7 +136,7 @@ def validate_source_input(
         raise ValueError("PDF upload is required.")
 
 
-def ingest_source(
+def create_processing_source(
     account_id: str,
     source_type: str,
     title: str | None = None,
@@ -135,16 +165,31 @@ def ingest_source(
         "error": None,
         "created_at": now_iso(),
     }
+    _set_progress(source, "validating", persist=False)
     append_source(account_id, source)
+    return source
 
+
+def process_source(
+    source: dict[str, Any],
+    text: str | None = None,
+    source_url: str | None = None,
+    file_bytes: bytes | None = None,
+    filename: str | None = None,
+) -> dict[str, Any]:
+    account_id = str(source["account_id"])
+    source_type = str(source["type"])
     try:
         if source_type == "note":
+            _set_progress(source, "reading_text")
             content = (text or "").strip()
         else:
+            _set_progress(source, "extracting")
             content = extract_pdf_text(file_bytes or b"")
-            if not title and filename:
+            if filename and source["title"] in {"Untitled source", filename}:
                 source["title"] = filename.rsplit(".", 1)[0]
 
+        _set_progress(source, "enriching")
         enrichment = enrich_content(source_type, source["title"], source_url, content)
 
         # Persist raw content and structured enrichment on the source record
@@ -157,9 +202,37 @@ def ingest_source(
 
         _replace_source_artifacts(source, content, enrichment)
         source["status"] = "ready"
+        _set_progress(source, "complete")
     except Exception as exc:
         source["status"] = "failed"
         source["error"] = str(exc)
+        save_source_result(account_id, source)
 
-    save_source_result(account_id, source)
     return source
+
+
+def ingest_source(
+    account_id: str,
+    source_type: str,
+    title: str | None = None,
+    text: str | None = None,
+    source_url: str | None = None,
+    file_bytes: bytes | None = None,
+    filename: str | None = None,
+) -> dict[str, Any]:
+    source = create_processing_source(
+        account_id=account_id,
+        source_type=source_type,
+        title=title,
+        text=text,
+        source_url=source_url,
+        file_bytes=file_bytes,
+        filename=filename,
+    )
+    return process_source(
+        source,
+        text=text,
+        source_url=source_url,
+        file_bytes=file_bytes,
+        filename=filename,
+    )

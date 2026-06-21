@@ -8,10 +8,17 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import type { SourceType } from "@/types";
+import type { SourceRecord, SourceType } from "@/types";
+
+function sourceTypeLabel(type: SourceType) {
+  if (type === "pdf") return "PDF";
+  if (type === "youtube") return "Video";
+  return "Note";
+}
 
 export function DigestSourcePage({
   activeType,
+  ingestProgress,
   isSubmitting,
   noteText,
   notice,
@@ -26,6 +33,7 @@ export function DigestSourcePage({
   youtubeUrl,
 }: {
   activeType: SourceType;
+  ingestProgress: SourceRecord | null;
   isSubmitting: boolean;
   noteText: string;
   notice: string;
@@ -39,6 +47,12 @@ export function DigestSourcePage({
   title: string;
   youtubeUrl: string;
 }) {
+  const progressPercent = Math.min(100, Math.max(0, ingestProgress?.progress_percent ?? 0));
+  const progressType = ingestProgress?.type ?? activeType;
+  const progressTitle = ingestProgress?.status === "failed"
+    ? `${sourceTypeLabel(progressType)} ingestion stopped`
+    : `Ingesting ${sourceTypeLabel(progressType)}`;
+
   return (
     <main className="min-h-[calc(100vh-74px)] border-r">
       <div className="flex h-14 items-center justify-between border-b px-6">
@@ -65,10 +79,10 @@ export function DigestSourcePage({
             </CardHeader>
             <CardContent className="pt-5">
               <form className="space-y-5" onSubmit={submitSource}>
-                  <Tabs value={activeType} onValueChange={(value) => setActiveType(value as SourceType)}>
+                  <Tabs value={activeType} onValueChange={(value) => { if (!isSubmitting) setActiveType(value as SourceType); }}>
                     <TabsList className="grid w-full grid-cols-3">
-                      <TabsTrigger value="note">Note</TabsTrigger>
-                      <TabsTrigger value="pdf">PDF</TabsTrigger>
+                      <TabsTrigger disabled={isSubmitting} value="note">Note</TabsTrigger>
+                      <TabsTrigger disabled={isSubmitting} value="pdf">PDF</TabsTrigger>
                       <TabsTrigger disabled value="youtube">Video</TabsTrigger>
                     </TabsList>
                   </Tabs>
@@ -76,13 +90,14 @@ export function DigestSourcePage({
 
                 <div className="space-y-2">
                   <label className="text-sm font-semibold" htmlFor="digest-title">Title</label>
-                  <Input id="digest-title" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Research paper, lecture, book chapter..." />
+                  <Input disabled={isSubmitting} id="digest-title" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Research paper, lecture, book chapter..." />
                 </div>
 
                 {activeType === "note" && (
                   <div className="space-y-2">
                     <label className="text-sm font-semibold" htmlFor="digest-note">Notes</label>
                     <Textarea
+                      disabled={isSubmitting}
                       id="digest-note"
                       value={noteText}
                       onChange={(event) => setNoteText(event.target.value)}
@@ -95,7 +110,7 @@ export function DigestSourcePage({
                 {activeType === "pdf" && (
                   <div className="space-y-2">
                     <label className="text-sm font-semibold" htmlFor="digest-pdf">PDF</label>
-                    <Input id="digest-pdf" accept="application/pdf" type="file" onChange={(event) => setPdfFile(event.target.files?.[0] || null)} />
+                    <Input disabled={isSubmitting} id="digest-pdf" accept="application/pdf" type="file" onChange={(event) => setPdfFile(event.target.files?.[0] || null)} />
                     <p className="text-xs text-muted-foreground">{pdfFile ? `${pdfFile.name} selected` : "Upload a readable PDF with selectable text."}</p>
                   </div>
                 )}
@@ -103,8 +118,33 @@ export function DigestSourcePage({
                 {activeType === "youtube" && (
                   <div className="space-y-2">
                     <label className="text-sm font-semibold" htmlFor="digest-youtube">YouTube URL</label>
-                    <Input id="digest-youtube" value={youtubeUrl} onChange={(event) => setYoutubeUrl(event.target.value)} placeholder="https://youtube.com/watch?v=..." />
+                    <Input disabled={isSubmitting} id="digest-youtube" value={youtubeUrl} onChange={(event) => setYoutubeUrl(event.target.value)} placeholder="https://youtube.com/watch?v=..." />
                     <p className="text-xs text-muted-foreground">MVP uses available captions/transcripts only.</p>
+                  </div>
+                )}
+
+                {ingestProgress && (
+                  <div className="rounded-lg border bg-muted/30 p-4" aria-live="polite">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-bold">{progressTitle}</p>
+                        <p className="text-xs text-muted-foreground">{ingestProgress.progress_label || "Starting ingestion"}</p>
+                      </div>
+                      <Badge variant="secondary">{progressPercent}%</Badge>
+                    </div>
+                    <div
+                      aria-label="Ingestion progress"
+                      aria-valuemax={100}
+                      aria-valuemin={0}
+                      aria-valuenow={progressPercent}
+                      className="h-2 overflow-hidden rounded-full bg-secondary"
+                      role="progressbar"
+                    >
+                      <div
+                        className="h-full rounded-full bg-primary transition-all duration-500 ease-out"
+                        style={{ width: `${progressPercent}%` }}
+                      />
+                    </div>
                   </div>
                 )}
 
@@ -112,7 +152,7 @@ export function DigestSourcePage({
 
                 <Button className="h-11 w-full" disabled={isSubmitting} type="submit">
                   {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-                  Digest source
+                  {isSubmitting ? "Digesting source..." : "Digest source"}
                 </Button>
               </form>
             </CardContent>

@@ -1,20 +1,19 @@
 from __future__ import annotations
 
 import heapq
-from functools import partial
 from typing import Any
 
 import anyio
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.datastructures import UploadFile
 
 load_dotenv()
 
 from embeddings import cosine_similarity, embed_text
-from ingestion import VideoIngestionDeferred, ingest_source
+from ingestion import VideoIngestionDeferred, create_processing_source, process_source
 from knowledge_ai import answer_with_context
 from storage import load_chunks, load_graph, load_posts, load_sources, upsert_account
 
@@ -224,6 +223,7 @@ def get_source(
 @app.post("/sources")
 async def create_source(
     request: Request,
+    background_tasks: BackgroundTasks,
 ) -> dict[str, Any]:
     account = current_account()
     payload = await _parse_source_request(request)
@@ -231,19 +231,31 @@ async def create_source(
     if not source_type:
         raise HTTPException(status_code=400, detail="Source type is required.")
 
+    title = str(payload.get("title") or "").strip() or None
+    text = str(payload.get("text") or "").strip() or None
+    source_url = str(payload.get("source_url") or "").strip() or None
+    file_bytes = payload.get("file_bytes")
+    filename = payload.get("filename")
+
     try:
-        return await anyio.to_thread.run_sync(
-            partial(
-                ingest_source,
-                account_id=account["id"],
-                source_type=source_type,
-                title=str(payload.get("title") or "").strip() or None,
-                text=str(payload.get("text") or "").strip() or None,
-                source_url=str(payload.get("source_url") or "").strip() or None,
-                file_bytes=payload.get("file_bytes"),
-                filename=payload.get("filename"),
-            )
+        source = create_processing_source(
+            account_id=account["id"],
+            source_type=source_type,
+            title=title,
+            text=text,
+            source_url=source_url,
+            file_bytes=file_bytes,
+            filename=filename,
         )
+        background_tasks.add_task(
+            process_source,
+            source,
+            text=text,
+            source_url=source_url,
+            file_bytes=file_bytes,
+            filename=filename,
+        )
+        return source
     except VideoIngestionDeferred as exc:
         raise HTTPException(status_code=501, detail=str(exc)) from exc
     except ValueError as exc:

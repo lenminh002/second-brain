@@ -31,7 +31,7 @@ export function SourceContent({ source }: { source: SourceDetail }) {
         </Section>
       )}
 
-      {source.key_ideas?.length > 0 && (
+      {!!source.key_ideas?.length && (
         <Section title="Key Ideas">
           <BulletList items={source.key_ideas} />
         </Section>
@@ -43,19 +43,19 @@ export function SourceContent({ source }: { source: SourceDetail }) {
         </Section>
       )}
 
-      {source.concepts?.length > 0 && (
+      {!!source.concepts?.length && (
         <Section title="Concepts">
           <BulletList items={source.concepts} />
         </Section>
       )}
 
-      {source.claims?.length > 0 && (
+      {!!source.claims?.length && (
         <Section title="Claims">
           <BulletList items={source.claims} />
         </Section>
       )}
 
-      {source.questions?.length > 0 && (
+      {!!source.questions?.length && (
         <Section title="Questions">
           <BulletList items={source.questions} />
         </Section>
