@@ -23,8 +23,8 @@ def _patch_storage(tmp_path: Path, monkeypatch) -> None:
 
 def _client(tmp_path: Path, monkeypatch) -> TestClient:
     _patch_storage(tmp_path, monkeypatch)
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+    monkeypatch.setenv("OPENAI_API_KEY", "")
 
     from backend import api
 
@@ -82,7 +82,7 @@ def test_edit_ready_source_regenerates_artifacts(tmp_path: Path, monkeypatch) ->
     )
     source_id = create_response.json()["id"]
 
-    def fake_enrichment(source_type, title, source_url, content):
+    def fake_enrichment(source_type, title, source_url, content, **_: object):
         if "oranges" in content:
             return {
                 "summary": "New summary about oranges.",
@@ -264,8 +264,8 @@ def test_pdf_ingestion_uses_extractor(tmp_path: Path, monkeypatch) -> None:
             "size_bytes": len(file_bytes),
         },
     )
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+    monkeypatch.setenv("OPENAI_API_KEY", "")
 
     from backend import api
 
@@ -312,8 +312,8 @@ def test_pdf_drive_upload_failure_records_failed_source_without_artifacts(
 
     monkeypatch.setattr("backend.ingestion.upload_pdf_to_drive", fail_upload)
     monkeypatch.setattr("backend.ingestion.extract_pdf_text", fail_extract)
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+    monkeypatch.setenv("OPENAI_API_KEY", "")
 
     from backend import api
 
@@ -342,12 +342,12 @@ def test_ingestion_failure_records_failed_source_with_progress(
     tmp_path: Path, monkeypatch
 ) -> None:
     _patch_storage(tmp_path, monkeypatch)
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+    monkeypatch.setenv("OPENAI_API_KEY", "")
 
     from backend import ingestion
 
-    def fail_enrichment(*_: object) -> dict:
+    def fail_enrichment(*_: object, **__: object) -> dict:
         raise RuntimeError("enrichment exploded")
 
     monkeypatch.setattr(ingestion, "enrich_content", fail_enrichment)
@@ -393,8 +393,8 @@ def test_parallel_note_ingestion_preserves_all_artifacts(tmp_path: Path, monkeyp
     from backend import storage
 
     _patch_storage(tmp_path, monkeypatch)
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+    monkeypatch.setenv("OPENAI_API_KEY", "")
 
     from backend import ingestion
 
@@ -553,8 +553,8 @@ def test_chat_agentic_loop_emits_core_stages(tmp_path: Path, monkeypatch) -> Non
     from backend import storage
 
     _patch_storage(tmp_path, monkeypatch)
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+    monkeypatch.setenv("OPENAI_API_KEY", "")
     storage.save_sources(
         TEST_ACCOUNT_ID,
         [
@@ -614,8 +614,8 @@ def test_chat_weak_evidence_triggers_one_revision(tmp_path: Path, monkeypatch) -
     from backend import storage
 
     _patch_storage(tmp_path, monkeypatch)
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+    monkeypatch.setenv("OPENAI_API_KEY", "")
     storage.save_sources(
         TEST_ACCOUNT_ID,
         [
@@ -665,8 +665,8 @@ def test_chat_loop_respects_tool_call_cap(tmp_path: Path, monkeypatch) -> None:
     from backend.services import chat_service
 
     _patch_storage(tmp_path, monkeypatch)
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+    monkeypatch.setenv("OPENAI_API_KEY", "")
     monkeypatch.setattr(chat_service, "MAX_TOOL_CALLS", 2)
     storage.save_chunks(
         TEST_ACCOUNT_ID,
@@ -720,8 +720,8 @@ def test_chat_expands_context_with_graph_neighbors(tmp_path: Path, monkeypatch) 
     from backend import storage
 
     _patch_storage(tmp_path, monkeypatch)
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+    monkeypatch.setenv("OPENAI_API_KEY", "")
     storage.save_chunks(
         TEST_ACCOUNT_ID,
         [
@@ -832,8 +832,8 @@ def test_chat_graphrag_falls_back_without_graph(tmp_path: Path, monkeypatch) -> 
     from backend import storage
 
     _patch_storage(tmp_path, monkeypatch)
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+    monkeypatch.setenv("OPENAI_API_KEY", "")
     storage.save_chunks(
         TEST_ACCOUNT_ID,
         [
@@ -869,8 +869,8 @@ def test_chat_skips_chunks_with_incompatible_embedding_dimensions(
     from backend import storage
 
     _patch_storage(tmp_path, monkeypatch)
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+    monkeypatch.setenv("OPENAI_API_KEY", "")
     storage.save_chunks(
         TEST_ACCOUNT_ID,
         [
@@ -1113,13 +1113,13 @@ def test_note_ingestion_persists_artifacts_to_firestore(monkeypatch) -> None:
 
     fake_db = _FakeFirestoreDb()
     monkeypatch.setenv("SECONDBRAIN_STORAGE_BACKEND", "firestore")
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+    monkeypatch.setenv("OPENAI_API_KEY", "")
     monkeypatch.setattr(FirestoreStorageBackend, "_build_client", lambda _: fake_db)
     monkeypatch.setattr(
         ingestion,
         "enrich_content",
-        lambda *_: {
+            lambda *_, **__: {
             "summary": "Firestore stores the ingested note.",
             "key_ideas": ["Persist source", "Persist chunks"],
             "concepts": ["Firestore", "Ingestion"],
