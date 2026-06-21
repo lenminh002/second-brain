@@ -1,4 +1,6 @@
 import { RefreshCcw, Sparkles, Upload } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -42,14 +44,14 @@ export function HomeView({
                     <AvatarFallback>{account?.initials || ""}</AvatarFallback>
                   </Avatar>
                   <div>
-                    <CardTitle className="text-base">{post.source_title}</CardTitle>
+                    <CardTitle className="text-base">Second Brain AI Agent</CardTitle>
                     <CardDescription>
                       {formatDate(post.created_at)}
                     </CardDescription>
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <p className="whitespace-pre-wrap leading-7">{post.body}</p>
+                  <h3 className="font-bold">{post.source_title}</h3>
                   {post.thumbnail_url && (
                     <div className="overflow-hidden rounded-lg border max-h-72 flex items-center justify-center bg-muted/20">
                       <img
@@ -59,6 +61,11 @@ export function HomeView({
                       />
                     </div>
                   )}
+                  <div className="prose prose-sm dark:prose-invert max-w-none [&_*]:text-inherit text-current">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {post.body}
+                    </ReactMarkdown>
+                  </div>
                 </CardContent>
               </Card>
             ))
