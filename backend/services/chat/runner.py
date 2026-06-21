@@ -12,7 +12,7 @@ from backend.services.chat.evidence import (
     _verification_summary,
 )
 from backend.services.chat.planning import _direct_simple_response, build_agent_plan, classify_message
-from backend.services.chat.settings import max_tool_calls
+from backend.services.chat.settings import max_research_rounds, max_tool_calls
 from backend.services.chat.tools import (
     _compare_and_record,
     _explore_and_record,
@@ -29,9 +29,10 @@ def _answer_with_tools(
     execute_tool: Callable[[str, dict[str, Any]], dict[str, Any]],
     history: ChatHistory | None = None,
 ) -> tuple[str, list[str]]:
-    api_fn = getattr(sys.modules.get("api"), "answer_with_tools", None)
-    if callable(api_fn) and api_fn is not answer_with_tools:
-        return api_fn(message, execute_tool)
+    for module_name in ("backend.api", "api"):
+        api_fn = getattr(sys.modules.get(module_name), "answer_with_tools", None)
+        if callable(api_fn) and api_fn is not answer_with_tools:
+            return api_fn(message, execute_tool)
     return answer_with_tools(message, execute_tool, history=history)
 
 
@@ -241,7 +242,7 @@ def run_agent(
             metadata=evaluation,
         )
 
-        if evaluation["needs_revision"]:
+        if evaluation["needs_revision"] and state.tool_call_count < max_tool_calls():
             _run_revision(state, emit_event, evaluation)
             evaluation = _evaluate_evidence(state)
             _add_step(
@@ -267,7 +268,12 @@ def run_agent(
         metadata=verification,
     )
 
-    if verification.get("status") == "warning" and state.rounds_used <= max_research_rounds():
+    if (
+        verification.get("status") == "warning"
+        and state.citations
+        and state.rounds_used <= max_research_rounds()
+        and state.tool_call_count < max_tool_calls()
+    ):
         state.rounds_used += 1
         state.history.append({"role": "assistant", "text": answer})
         

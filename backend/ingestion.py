@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 from backend.embeddings import current_embedding_model, embed_texts
 from backend.extractors import extract_pdf_text
-from backend.google_drive import upload_pdf_to_drive
+from backend.file_storage import store_original_file
 from backend.services.enrichment import enrich_content
 from backend.storage import (
     append_source,
@@ -37,6 +37,31 @@ ProgressStage = Literal[
     "graphing",
     "complete",
 ]
+
+
+def upload_pdf_to_drive(file_bytes: bytes, filename: str | None) -> dict[str, Any]:
+    return store_original_file(file_bytes, filename)
+
+
+def _enrich_content(
+    source_type: str,
+    title: str,
+    source_url: str | None,
+    content: str,
+    existing_tags: list[str],
+) -> dict[str, Any]:
+    try:
+        return enrich_content(
+            source_type,
+            title,
+            source_url,
+            content,
+            existing_tags=existing_tags,
+        )
+    except TypeError as exc:
+        if "existing_tags" not in str(exc):
+            raise
+        return enrich_content(source_type, title, source_url, content)
 
 
 def now_iso() -> str:
@@ -134,7 +159,10 @@ def _attach_original_file_metadata(
         metadata = {}
     metadata["original_file"] = original_file
     source["metadata"] = metadata
-    source["source_url"] = original_file.get("drive_web_view_link")
+    # GitHub backend returns web_view_link; Drive returns drive_web_view_link.
+    source["source_url"] = original_file.get("web_view_link") or original_file.get(
+        "drive_web_view_link"
+    )
 
 
 def validate_source_input(
@@ -213,7 +241,13 @@ def process_source(
         _set_progress(source, "enriching")
         existing_graph = load_graph(account_id)
         existing_tags = [n["label"] for n in existing_graph.get("nodes", []) if n.get("type") == "tag"]
-        enrichment = enrich_content(source_type, source["title"], source.get("source_url") or source_url, content, existing_tags=existing_tags)
+        enrichment = _enrich_content(
+            source_type,
+            source["title"],
+            source.get("source_url") or source_url,
+            content,
+            existing_tags,
+        )
 
         # Persist raw content and structured enrichment on the source record
         source["content"] = content
@@ -247,12 +281,12 @@ def edit_source_content(source: dict[str, Any], content: str) -> dict[str, Any]:
     _set_progress(source, "enriching")
     existing_graph = load_graph(str(source["account_id"]))
     existing_tags = [n["label"] for n in existing_graph.get("nodes", []) if n.get("type") == "tag"]
-    enrichment = enrich_content(
+    enrichment = _enrich_content(
         source_type,
         str(source.get("title") or "Untitled source"),
         source.get("source_url"),
         content,
-        existing_tags=existing_tags,
+        existing_tags,
     )
 
     source["content"] = content

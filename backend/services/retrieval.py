@@ -40,10 +40,11 @@ def _rank_chunks(
 
 
 def _embed_query(query: str) -> list[float]:
-    api_module = sys.modules.get("api")
-    api_embed_text = getattr(api_module, "embed_text", None)
-    if callable(api_embed_text) and api_embed_text is not embed_text:
-        return api_embed_text(query)
+    for module_name in ("backend.api", "api"):
+        api_module = sys.modules.get(module_name)
+        api_embed_text = getattr(api_module, "embed_text", None)
+        if callable(api_embed_text) and api_embed_text is not embed_text:
+            return api_embed_text(query)
     return embed_text(query)
 
 
