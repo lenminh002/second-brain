@@ -30,6 +30,7 @@ export function useSourceIngestion({
   const [title, setTitle] = useState("");
   const [noteText, setNoteText] = useState("");
   const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [thumbnailUrl, setThumbnailUrl] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [ingestProgress, setIngestProgress] = useState<SourceRecord | null>(null);
 
@@ -44,7 +45,10 @@ export function useSourceIngestion({
       formData.append("type", activeType);
       formData.append("title", title);
       if (activeType === "note") formData.append("text", noteText);
-      if (activeType === "pdf" && pdfFile) formData.append("file", pdfFile);
+      if (activeType === "pdf") {
+        if (pdfFile) formData.append("file", pdfFile);
+        if (thumbnailUrl.trim()) formData.append("thumbnail_url", thumbnailUrl.trim());
+      }
 
       const payload = await createSource(formData);
       setIngestProgress(payload);
@@ -63,6 +67,7 @@ export function useSourceIngestion({
         setTitle("");
         setNoteText("");
         setPdfFile(null);
+        setThumbnailUrl("");
         await refresh();
         setSelectedSourceId(completedSource.id);
         setActiveView("notes");
@@ -86,6 +91,8 @@ export function useSourceIngestion({
     setNoteText,
     pdfFile,
     setPdfFile,
+    thumbnailUrl,
+    setThumbnailUrl,
     isSubmitting,
     setIsSubmitting,
     ingestProgress,

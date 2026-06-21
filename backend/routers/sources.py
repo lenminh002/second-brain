@@ -36,6 +36,7 @@ async def _parse_source_request(request: Request) -> dict[str, Any]:
         "title": form.get("title"),
         "text": form.get("text"),
         "source_url": form.get("source_url"),
+        "thumbnail_url": form.get("thumbnail_url"),
         "file_bytes": file_bytes,
         "filename": filename,
     }
@@ -99,6 +100,7 @@ async def create_source(
     title = str(payload.get("title") or "").strip() or None
     text = str(payload.get("text") or "").strip() or None
     source_url = str(payload.get("source_url") or "").strip() or None
+    thumbnail_url = str(payload.get("thumbnail_url") or "").strip() or None
     file_bytes = payload.get("file_bytes")
     filename = payload.get("filename")
 
@@ -109,6 +111,7 @@ async def create_source(
             title=title,
             text=text,
             source_url=source_url,
+            thumbnail_url=thumbnail_url,
             file_bytes=file_bytes,
             filename=filename,
         )

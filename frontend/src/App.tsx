@@ -65,6 +65,8 @@ function AuthenticatedApp() {
     setNoteText,
     pdfFile,
     setPdfFile,
+    thumbnailUrl,
+    setThumbnailUrl,
     isSubmitting,
     ingestProgress,
     submitSource,
@@ -151,6 +153,7 @@ function AuthenticatedApp() {
               posts={accountPosts}
               refresh={refreshWithNotice}
               setActiveView={setActiveView}
+              onIngestClick={() => setIsIngestOpen(true)}
             />
           ) : activeView === "chat" ? (
             <div className="h-[calc(100vh-74px)]">
@@ -223,6 +226,8 @@ function AuthenticatedApp() {
           noteText={noteText}
           notice={notice}
           pdfFile={pdfFile}
+          thumbnailUrl={thumbnailUrl}
+          setThumbnailUrl={setThumbnailUrl}
           setActiveType={setActiveType}
           setNoteText={setNoteText}
           setPdfFile={setPdfFile}

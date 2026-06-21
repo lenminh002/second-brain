@@ -136,6 +136,8 @@ def _replace_source_artifacts(source: dict[str, Any], content: str, enrichment: 
         "body": enrichment["social_post"],
         "created_at": now_iso(),
     }
+    if source.get("thumbnail_url"):
+        post["thumbnail_url"] = source["thumbnail_url"]
     
     raw_concepts = enrichment.get("concepts", [])
     concept_embeddings = embed_texts(raw_concepts) if raw_concepts else []
@@ -193,6 +195,7 @@ def create_processing_source(
     title: str | None = None,
     text: str | None = None,
     source_url: str | None = None,
+    thumbnail_url: str | None = None,
     file_bytes: bytes | None = None,
     filename: str | None = None,
 ) -> dict[str, Any]:
@@ -212,6 +215,7 @@ def create_processing_source(
         "type": source_type,
         "title": (title or filename or source_url or "Untitled source").strip(),
         "source_url": source_url,
+        "thumbnail_url": thumbnail_url,
         "status": "processing",
         "error": None,
         "created_at": now_iso(),

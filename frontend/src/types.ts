@@ -17,6 +17,7 @@ export type SourceRecord = {
   type: SourceType;
   title: string;
   source_url: string | null;
+  thumbnail_url?: string | null;
   status: SourceStatus;
   error: string | null;
   created_at: string;
@@ -58,6 +59,7 @@ export type PostRecord = {
   source_title: string;
   body: string;
   created_at: string;
+  thumbnail_url?: string;
 };
 
 export type GraphNode = {

@@ -13,12 +13,14 @@ export function HomeView({
   posts,
   refresh,
   setActiveView,
+  onIngestClick,
 }: {
   account: AccountRecord | null;
   notice: string;
   posts: PostRecord[];
   refresh: () => void;
   setActiveView: (view: ActiveView) => void;
+  onIngestClick: () => void;
 }) {
   return (
     <main className="min-h-[calc(100vh-74px)] border-r">
@@ -46,8 +48,17 @@ export function HomeView({
                     </CardDescription>
                   </div>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="space-y-4">
                   <p className="whitespace-pre-wrap leading-7">{post.body}</p>
+                  {post.thumbnail_url && (
+                    <div className="overflow-hidden rounded-lg border max-h-72 flex items-center justify-center bg-muted/20">
+                      <img
+                        alt={post.source_title}
+                        src={post.thumbnail_url}
+                        className="w-full object-cover max-h-72"
+                      />
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             ))
@@ -57,7 +68,7 @@ export function HomeView({
                 <Sparkles className="mx-auto mb-6 h-24 w-24 text-primary" />
                 <h2 className="text-4xl font-black tracking-tight">Nothing to see yet</h2>
                 <p className="mt-3 text-lg text-muted-foreground">Ingest a source and posts will appear here.</p>
-                <Button className="mt-6" onClick={() => setActiveView("ingest")}>
+                <Button className="mt-6" onClick={onIngestClick}>
                   <Upload className="h-4 w-4" />
                   Ingest Source
                 </Button>

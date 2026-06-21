@@ -31,6 +31,8 @@ interface IngestSourceDrawerProps {
   noteText: string;
   notice: string;
   pdfFile: File | null;
+  thumbnailUrl: string;
+  setThumbnailUrl: (value: string) => void;
   setActiveType: (type: SourceType) => void;
   setNoteText: (value: string) => void;
   setPdfFile: (file: File | null) => void;
@@ -48,6 +50,8 @@ export function IngestSourceDrawer({
   noteText,
   notice,
   pdfFile,
+  thumbnailUrl,
+  setThumbnailUrl,
   setActiveType,
   setNoteText,
   setPdfFile,
@@ -130,21 +134,36 @@ export function IngestSourceDrawer({
               )}
 
               {activeType === "pdf" && (
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-muted-foreground" htmlFor="ingest-pdf">
-                    PDF File
-                  </label>
-                  <Input
-                    disabled={isSubmitting}
-                    id="ingest-pdf"
-                    accept="application/pdf"
-                    type="file"
-                    onChange={(event) => setPdfFile(event.target.files?.[0] || null)}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    {pdfFile ? `${pdfFile.name} selected` : "Upload a readable PDF with selectable text."}
-                  </p>
-                </div>
+                <>
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-muted-foreground" htmlFor="ingest-pdf">
+                      PDF File
+                    </label>
+                    <Input
+                      disabled={isSubmitting}
+                      id="ingest-pdf"
+                      accept="application/pdf"
+                      type="file"
+                      onChange={(event) => setPdfFile(event.target.files?.[0] || null)}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {pdfFile ? `${pdfFile.name} selected` : "Upload a readable PDF with selectable text."}
+                    </p>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-muted-foreground" htmlFor="ingest-thumbnail">
+                      Thumbnail Link (optional)
+                    </label>
+                    <Input
+                      disabled={isSubmitting}
+                      id="ingest-thumbnail"
+                      type="url"
+                      value={thumbnailUrl}
+                      onChange={(event) => setThumbnailUrl(event.target.value)}
+                      placeholder="https://example.com/thumbnail.png"
+                    />
+                  </div>
+                </>
               )}
 
               {ingestProgress && (
