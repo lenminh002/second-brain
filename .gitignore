@@ -10,3 +10,6 @@ frontend/dist/
 frontend/.env.local
 
 firebase-service-account.json
+
+# Ignore node_modules anywhere (ver2 had root-level node_modules committed)
+node_modules/
