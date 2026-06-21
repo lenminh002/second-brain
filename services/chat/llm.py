@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import json
-import os
-import re
 from collections.abc import Callable, Generator
 from typing import Any
 
-from anthropic import Anthropic
+from services.anthropic_client import (
+    MODEL_NAME,
+    _client,
+    _message_content_to_params,
+    _text_from_content,
+)
 
-MODEL_NAME = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6")
 MAX_AGENT_TURNS = 3
 MAX_PROMPT_HISTORY_MESSAGES = 20
 MAX_PROMPT_HISTORY_TEXT_LENGTH = 4000
@@ -81,101 +83,59 @@ CHAT_TOOLS = [
     },
 ]
 
-
-def _strip_code_fence(text: str) -> str:
-    """Extract the first fenced JSON block, or return the raw text.
-
-    Previously anchored with $ so prose *around* a fenced block ("Here is the
-    JSON: ```{...}```") was not stripped, causing json.loads to fail.  Now we
-    search for the first fenced block anywhere in the response.
-    """
-    stripped = text.strip()
-    fenced = re.search(r"```(?:json)?\s*(.*?)\s*```", stripped, flags=re.DOTALL | re.IGNORECASE)
-    return fenced.group(1).strip() if fenced else stripped
-
-
-def _as_string_list(value: Any, limit: int = 12) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    cleaned = [str(item).strip() for item in value if str(item).strip()]
-    return cleaned[:limit]
-
-
-def _fallback_enrichment(title: str, content: str) -> dict[str, Any]:
-    sentences = re.split(r"(?<=[.!?])\s+", content.strip())
-    usable = [sentence.strip() for sentence in sentences if sentence.strip()]
-    summary = " ".join(usable[:2]) if usable else f"{title} was added to the knowledge base."
-    words = re.findall(r"[A-Za-z][A-Za-z0-9-]{3,}", content)
-    seen: set[str] = set()
-    concepts: list[str] = []
-    for word in words:
-        key = word.lower()
-        if key not in seen:
-            seen.add(key)
-            concepts.append(word)
-        if len(concepts) >= 8:
-            break
-    key_ideas = usable[:5] or [summary]
-    return {
-        "summary": summary,
-        "key_ideas": key_ideas,
-        "concepts": concepts or ["Knowledge base"],
-        "claims": usable[:4],
-        "questions": ["What should I connect this to next?"],
-        "social_post": f"Added a new note on {title}: {summary[:220]}",
-    }
-
-
-def enrich_content(source_type: str, title: str, source_url: str | None, content: str) -> dict[str, Any]:
-    client = _client()
-    if client is None:
-        return _fallback_enrichment(title, content)
-
-    prompt = f"""
-You are turning a consumed knowledge source into a personal knowledge-base entry.
-
-Source type: {source_type}
-Title: {title}
-Source URL: {source_url or "none"}
-
-Return ONLY valid JSON in this shape:
-{{
-  "summary": "one concise paragraph",
-  "key_ideas": ["short bullet"],
-  "concepts": ["canonical concept/entity name"],
-  "claims": ["claim or useful assertion"],
-  "questions": ["open question for future learning"],
-  "social_post": "one social-media style post in first person, under 900 characters"
-}}
-
-Content:
-{content[:30000]}
+CHAT_SYSTEM_PROMPT = """
+You are a personal knowledge assistant. For simple greetings or conversational messages
+(e.g. "hello", "thanks", "how are you"), respond naturally without searching.
+For questions about specific topics, notes, or information, use the search_knowledge_base
+tool to find relevant saved content and cite sources inline like [1]. When the question
+asks for relationships, themes, contradictions, or synthesis across notes, also use
+explore_graph_connections or compare_sources before answering.
+If the saved context is insufficient, say what is missing.
 """.strip()
 
-    try:
-        message = client.messages.create(
-            model=MODEL_NAME,
-            max_tokens=1800,
-            temperature=0.2,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        parsed = json.loads(_strip_code_fence(_text_from_content(message.content)))
-        if not isinstance(parsed, dict):
-            raise ValueError("Claude enrichment response was not a JSON object.")
-    except Exception:
-        # Malformed / non-JSON model output used to propagate here and mark the
-        # entire source as failed.  Degrade gracefully to the rule-based fallback.
-        return _fallback_enrichment(title, content)
 
-    fallback = _fallback_enrichment(title, content)
-    return {
-        "summary": str(parsed.get("summary", "")).strip() or fallback["summary"],
-        "key_ideas": _as_string_list(parsed.get("key_ideas")),
-        "concepts": _as_string_list(parsed.get("concepts")),
-        "claims": _as_string_list(parsed.get("claims")),
-        "questions": _as_string_list(parsed.get("questions")),
-        "social_post": str(parsed.get("social_post", "")).strip() or fallback["social_post"],
-    }
+def _format_chat_history(history: list[dict[str, str]] | None) -> str:
+    lines: list[str] = []
+    for item in (history or [])[-MAX_PROMPT_HISTORY_MESSAGES:]:
+        role = item.get("role")
+        text = str(item.get("text") or "").strip()
+        if role not in {"user", "assistant"} or not text:
+            continue
+        label = "User" if role == "user" else "Assistant"
+        lines.append(f"{label}: {text[:MAX_PROMPT_HISTORY_TEXT_LENGTH]}")
+    return "\n".join(lines)
+
+
+def _message_with_history(message: str, history: list[dict[str, str]] | None) -> str:
+    history_text = _format_chat_history(history)
+    if not history_text:
+        return message
+    return f"""
+Conversation history:
+{history_text}
+
+Current user message:
+{message}
+""".strip()
+
+
+def _tool_result(tool_use: Any, execute_tool: Callable[[str, dict[str, Any]], dict[str, Any]]) -> dict[str, Any]:
+    """Build a tool_result block, handling errors gracefully."""
+    tool_input = getattr(tool_use, "input", {}) or {}
+    try:
+        result = execute_tool(str(getattr(tool_use, "name", "")), dict(tool_input))
+        return {
+            "type": "tool_result",
+            "tool_use_id": tool_use.id,
+            "content": json.dumps(result),
+        }
+    except Exception as exc:
+        return {
+            "type": "tool_result",
+            "tool_use_id": tool_use.id,
+            "is_error": True,
+            "content": str(exc),
+        }
 
 
 def answer_with_context(
@@ -226,52 +186,6 @@ Graph context:
     return _text_from_content(response.content)
 
 
-def _client() -> Anthropic | None:
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    return Anthropic(api_key=api_key) if api_key else None
-
-
-def _message_content_to_params(content: Any) -> list[dict[str, Any]]:
-    params: list[dict[str, Any]] = []
-    for block in content:
-        if hasattr(block, "model_dump"):
-            params.append(block.model_dump(exclude_none=True))
-        else:
-            params.append(dict(block))
-    return params
-
-
-def _text_from_content(content: Any) -> str:
-    return "".join(
-        block.text for block in content if getattr(block, "type", None) == "text"
-    ).strip()
-
-
-def _format_chat_history(history: list[dict[str, str]] | None) -> str:
-    lines: list[str] = []
-    for item in (history or [])[-MAX_PROMPT_HISTORY_MESSAGES:]:
-        role = item.get("role")
-        text = str(item.get("text") or "").strip()
-        if role not in {"user", "assistant"} or not text:
-            continue
-        label = "User" if role == "user" else "Assistant"
-        lines.append(f"{label}: {text[:MAX_PROMPT_HISTORY_TEXT_LENGTH]}")
-    return "\n".join(lines)
-
-
-def _message_with_history(message: str, history: list[dict[str, str]] | None) -> str:
-    history_text = _format_chat_history(history)
-    if not history_text:
-        return message
-    return f"""
-Conversation history:
-{history_text}
-
-Current user message:
-{message}
-""".strip()
-
-
 def answer_with_tools(
     message: str,
     execute_tool: Callable[[str, dict[str, Any]], dict[str, Any]],
@@ -284,22 +198,13 @@ def answer_with_tools(
         {"role": "user", "content": _message_with_history(message, history)}
     ]
     used_tools: list[str] = []
-    system = """
-You are a personal knowledge assistant. For simple greetings or conversational messages
-(e.g. "hello", "thanks", "how are you"), respond naturally without searching.
-For questions about specific topics, notes, or information, use the search_knowledge_base
-tool to find relevant saved content and cite sources inline like [1]. When the question
-asks for relationships, themes, contradictions, or synthesis across notes, also use
-explore_graph_connections or compare_sources before answering.
-If the saved context is insufficient, say what is missing.
-""".strip()
 
     for turn_index in range(MAX_AGENT_TURNS):
         response = client.messages.create(
             model=MODEL_NAME,
             max_tokens=1200,
             temperature=0.1,
-            system=system,
+            system=CHAT_SYSTEM_PROMPT,
             tools=CHAT_TOOLS,
             tool_choice={"type": "auto"},
             messages=messages,
@@ -316,34 +221,16 @@ If the saved context is insufficient, say what is missing.
         tool_results: list[dict[str, Any]] = []
         for tool_use in tool_uses:
             tool_name = str(getattr(tool_use, "name", ""))
-            tool_input = getattr(tool_use, "input", {}) or {}
             if tool_name:
                 used_tools.append(tool_name)
-            try:
-                result = execute_tool(tool_name, dict(tool_input))
-                tool_results.append(
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": tool_use.id,
-                        "content": json.dumps(result),
-                    }
-                )
-            except Exception as exc:
-                tool_results.append(
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": tool_use.id,
-                        "is_error": True,
-                        "content": str(exc),
-                    }
-                )
+            tool_results.append(_tool_result(tool_use, execute_tool))
         messages.append({"role": "user", "content": tool_results})
 
     final_response = client.messages.create(
         model=MODEL_NAME,
         max_tokens=800,
         temperature=0.1,
-        system=system,
+        system=CHAT_SYSTEM_PROMPT,
         messages=messages
         + [
             {
@@ -356,7 +243,6 @@ If the saved context is insufficient, say what is missing.
         ],
     )
     return _text_from_content(final_response.content), used_tools
-
 
 
 def stream_with_tools(
@@ -378,22 +264,13 @@ def stream_with_tools(
     messages: list[dict[str, Any]] = [
         {"role": "user", "content": _message_with_history(message, history)}
     ]
-    system = """
-You are a personal knowledge assistant. For simple greetings or conversational messages
-(e.g. "hello", "thanks", "how are you"), respond naturally without searching.
-For questions about specific topics, notes, or information, use the search_knowledge_base
-tool to find relevant saved content and cite sources inline like [1]. When the question
-asks for relationships, themes, contradictions, or synthesis across notes, also use
-explore_graph_connections or compare_sources before answering.
-If the saved context is insufficient, say what is missing.
-""".strip()
 
     for _turn in range(MAX_AGENT_TURNS):
         with client.messages.stream(
             model=MODEL_NAME,
             max_tokens=1200,
             temperature=0.1,
-            system=system,
+            system=CHAT_SYSTEM_PROMPT,
             tools=CHAT_TOOLS,
             tool_choice={"type": "auto"},
             messages=messages,
@@ -417,26 +294,8 @@ If the saved context is insufficient, say what is missing.
         tool_results: list[dict[str, Any]] = []
         for tool_use in tool_uses:
             tool_name = str(getattr(tool_use, "name", ""))
-            tool_input = getattr(tool_use, "input", {}) or {}
             yield {"type": "tool_call", "name": tool_name}
-            try:
-                result = execute_tool(tool_name, dict(tool_input))
-                tool_results.append(
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": tool_use.id,
-                        "content": json.dumps(result),
-                    }
-                )
-            except Exception as exc:
-                tool_results.append(
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": tool_use.id,
-                        "is_error": True,
-                        "content": str(exc),
-                    }
-                )
+            tool_results.append(_tool_result(tool_use, execute_tool))
         messages.append({"role": "user", "content": tool_results})
 
     yield {"type": "done"}

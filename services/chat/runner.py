@@ -4,7 +4,7 @@ import sys
 from collections.abc import Callable
 from typing import Any
 
-from knowledge_ai import answer_with_context, answer_with_tools, stream_with_tools
+from services.chat.llm import answer_with_context, answer_with_tools, stream_with_tools
 from services.chat.evidence import (
     _context_chunks_from_citations,
     _evaluate_evidence,
@@ -29,14 +29,9 @@ def _answer_with_tools(
     execute_tool: Callable[[str, dict[str, Any]], dict[str, Any]],
     history: ChatHistory | None = None,
 ) -> tuple[str, list[str]]:
-    api_module = sys.modules.get("api")
-    api_answer_with_tools = getattr(api_module, "answer_with_tools", None)
-    is_original_export = (
-        getattr(api_answer_with_tools, "__module__", "") == "knowledge_ai"
-        and getattr(api_answer_with_tools, "__name__", "") == "answer_with_tools"
-    )
-    if callable(api_answer_with_tools) and not is_original_export:
-        return api_answer_with_tools(message, execute_tool)
+    api_fn = getattr(sys.modules.get("api"), "answer_with_tools", None)
+    if callable(api_fn) and api_fn is not answer_with_tools:
+        return api_fn(message, execute_tool)
     return answer_with_tools(message, execute_tool, history=history)
 
 
