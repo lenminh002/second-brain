@@ -71,6 +71,14 @@ export async function updateSourceContent(sourceId: string, content: string) {
   return (await response.json()) as SourceDetail;
 }
 
+export async function deleteSource(sourceId: string) {
+  const response = await authFetch(`${API_BASE_URL}/sources/${sourceId}`, {
+    method: "DELETE",
+  });
+  if (!response.ok) throw await responseError(response, "Memory delete failed.");
+  return (await response.json()) as { status: string; source_id: string };
+}
+
 export async function createSource(formData: FormData) {
   const response = await authFetch(`${API_BASE_URL}/sources`, {
     method: "POST",

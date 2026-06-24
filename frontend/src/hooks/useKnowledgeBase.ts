@@ -21,8 +21,13 @@ export function useKnowledgeBase() {
       setSources(data.sources);
       setPosts(data.posts);
       setGraph(data.graph);
-      if (!selectedSourceId && data.sources.length) {
-        setSelectedSourceId(data.sources[0].id);
+      const selectedSourceExists = data.sources.some((source) => source.id === selectedSourceId);
+      if (!selectedSourceId || !selectedSourceExists) {
+        const nextSourceId = data.sources[0]?.id ?? null;
+        setSelectedSourceId(nextSourceId);
+        if (!nextSourceId) {
+          setSelectedSourceDetail(null);
+        }
       }
     } finally {
       setIsLoading(false);

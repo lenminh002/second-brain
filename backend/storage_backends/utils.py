@@ -92,3 +92,34 @@ def merge_graph(
             edge_keys.add(key)
 
     return {"nodes": list(nodes_by_id.values()), "edges": edges}
+
+
+def remove_source_from_graph(
+    graph: dict[str, list[dict[str, Any]]],
+    source_id: str,
+) -> dict[str, list[dict[str, Any]]]:
+    graph = coerce_graph(graph)
+    source_node_id = f"source-{source_id}"
+    edges = [
+        edge
+        for edge in graph["edges"]
+        if edge.get("source") != source_node_id and edge.get("target") != source_node_id
+    ]
+    referenced_node_ids = {
+        node_id
+        for edge in edges
+        for node_id in (edge.get("source"), edge.get("target"))
+        if isinstance(node_id, str)
+    }
+    nodes = [
+        node
+        for node in graph["nodes"]
+        if (
+            node.get("id") != source_node_id
+            and (
+                node.get("type") == "source"
+                or node.get("id") in referenced_node_ids
+            )
+        )
+    ]
+    return {"nodes": nodes, "edges": edges}

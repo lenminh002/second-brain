@@ -5,7 +5,12 @@ from typing import Any
 
 from backend.firebase_admin_app import get_firebase_admin_app
 from backend.storage_backends.base import StorageBackend
-from backend.storage_backends.utils import coerce_graph, coerce_list, merge_graph
+from backend.storage_backends.utils import (
+    coerce_graph,
+    coerce_list,
+    merge_graph,
+    remove_source_from_graph,
+)
 
 
 class FirestoreStorageBackend(StorageBackend):
@@ -92,6 +97,25 @@ class FirestoreStorageBackend(StorageBackend):
     def save_source_result(self, account_id: str, source: dict[str, Any]) -> None:
         record = {**source, "account_id": account_id}
         self._db.collection("sources").document(str(record["id"])).set(record)
+
+    def delete_source_artifacts(self, account_id: str, source_id: str) -> None:
+        source_ref = self._db.collection("sources").document(str(source_id))
+        source = source_ref.get().to_dict() or {}
+        if source.get("account_id") == account_id:
+            source_ref.delete()
+
+        for collection_name in ("chunks", "posts", "agent_runs"):
+            query = (
+                self._db.collection(collection_name)
+                .where("account_id", "==", account_id)
+                .where("source_id", "==", source_id)
+            )
+            self._delete_query(query)
+
+        self.save_graph(
+            account_id,
+            remove_source_from_graph(self.load_graph(account_id), source_id),
+        )
 
     def commit_source_artifacts(
         self,

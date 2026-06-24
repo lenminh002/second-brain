@@ -54,6 +54,10 @@ class StorageBackend(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def delete_source_artifacts(self, account_id: str, source_id: str) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
     def commit_source_artifacts(
         self,
         account_id: str,

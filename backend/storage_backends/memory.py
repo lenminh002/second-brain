@@ -6,7 +6,7 @@ from copy import deepcopy
 from typing import Any
 
 from backend.storage_backends.base import StorageBackend
-from backend.storage_backends.utils import coerce_graph, merge_graph
+from backend.storage_backends.utils import coerce_graph, merge_graph, remove_source_from_graph
 
 
 def _seed_embeddings(texts: list[str]) -> list[list[float]]:
@@ -240,6 +240,33 @@ class MemoryStorageBackend(StorageBackend):
         with self._lock:
             record = {**source, "account_id": account_id}
             self.sources[str(record["id"])] = deepcopy(record)
+
+    def delete_source_artifacts(self, account_id: str, source_id: str) -> None:
+        with self._lock:
+            self.sources = {
+                current_source_id: source
+                for current_source_id, source in self.sources.items()
+                if source.get("account_id") != account_id or current_source_id != source_id
+            }
+            self.chunks = {
+                chunk_id: chunk
+                for chunk_id, chunk in self.chunks.items()
+                if chunk.get("account_id") != account_id or chunk.get("source_id") != source_id
+            }
+            self.posts = {
+                post_id: post
+                for post_id, post in self.posts.items()
+                if post.get("account_id") != account_id or post.get("source_id") != source_id
+            }
+            self.agent_runs = {
+                run_id: run
+                for run_id, run in self.agent_runs.items()
+                if run.get("account_id") != account_id or run.get("source_id") != source_id
+            }
+            self.graphs[account_id] = remove_source_from_graph(
+                self.graphs.get(account_id, {"nodes": [], "edges": []}),
+                source_id,
+            )
 
     def commit_source_artifacts(
         self,

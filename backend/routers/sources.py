@@ -8,7 +8,7 @@ from starlette.datastructures import UploadFile
 from backend.ingestion import create_processing_source, edit_source_content, process_source
 from backend.services.account_service import current_account
 from backend.services.retrieval import _sort_newest
-from backend.storage import load_sources
+from backend.storage import delete_source_artifacts, load_sources
 
 router = APIRouter()
 
@@ -84,6 +84,25 @@ async def update_source(source_id: str, request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.delete("/sources/{source_id}")
+def delete_source(source_id: str) -> dict[str, str]:
+    account = current_account()
+    source = next(
+        (item for item in load_sources(account["id"]) if item.get("id") == source_id),
+        None,
+    )
+    if source is None:
+        raise HTTPException(status_code=404, detail="Source not found")
+    if source.get("status") == "processing":
+        raise HTTPException(
+            status_code=409,
+            detail="Processing memories cannot be deleted until ingestion finishes.",
+        )
+
+    delete_source_artifacts(account["id"], source_id)
+    return {"status": "deleted", "source_id": source_id}
 
 
 @router.post("/sources")

@@ -179,6 +179,157 @@ def test_edit_source_rejects_invalid_requests(tmp_path: Path, monkeypatch) -> No
     assert processing_response.status_code == 409
 
 
+def test_delete_ready_source_cascades_artifacts(tmp_path: Path, monkeypatch) -> None:
+    client = _client(tmp_path, monkeypatch)
+    keep_response = client.post(
+        "/sources",
+        json={
+            "type": "note",
+            "title": "Shared Concept",
+            "text": "Shared retrieval concept should remain after deleting another memory.",
+        },
+    )
+    delete_response = client.post(
+        "/sources",
+        json={
+            "type": "note",
+            "title": "Delete Me",
+            "text": "This memory mentions retrieval and a unique cascade marker.",
+        },
+    )
+    keep_source_id = keep_response.json()["id"]
+    delete_source_id = delete_response.json()["id"]
+
+    from backend import storage
+
+    graph = storage.load_graph(TEST_ACCOUNT_ID)
+    graph["nodes"].extend(
+        [
+            {"id": "concept-shared", "label": "Shared", "type": "concept"},
+            {"id": "concept-orphan", "label": "Orphan", "type": "concept"},
+            {"id": "tag-shared", "label": "shared", "type": "tag"},
+            {"id": "tag-orphan", "label": "orphan", "type": "tag"},
+        ]
+    )
+    graph["edges"].extend(
+        [
+            {
+                "source": f"source-{keep_source_id}",
+                "target": "concept-shared",
+                "relation": "mentions",
+            },
+            {
+                "source": f"source-{delete_source_id}",
+                "target": "concept-shared",
+                "relation": "mentions",
+            },
+            {
+                "source": f"source-{delete_source_id}",
+                "target": "concept-orphan",
+                "relation": "mentions",
+            },
+            {
+                "source": f"source-{keep_source_id}",
+                "target": "tag-shared",
+                "relation": "tagged_as",
+            },
+            {
+                "source": f"source-{delete_source_id}",
+                "target": "tag-orphan",
+                "relation": "tagged_as",
+            },
+        ]
+    )
+    storage.save_graph(TEST_ACCOUNT_ID, graph)
+    storage.create_agent_run(
+        {
+            "run_id": "delete-run",
+            "account_id": TEST_ACCOUNT_ID,
+            "source_id": delete_source_id,
+            "status": "complete",
+        }
+    )
+
+    response = client.delete(f"/sources/{delete_source_id}")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "deleted", "source_id": delete_source_id}
+    assert client.get(f"/sources/{delete_source_id}").status_code == 404
+    assert {source["id"] for source in client.get("/sources").json()} == {keep_source_id}
+    assert not any(post["source_id"] == delete_source_id for post in client.get("/posts").json())
+    assert not any(chunk["source_id"] == delete_source_id for chunk in storage.load_chunks(TEST_ACCOUNT_ID))
+    assert storage.list_agent_runs_for_source(TEST_ACCOUNT_ID, delete_source_id) == []
+
+    graph = client.get("/graph").json()
+    node_ids = {node["id"] for node in graph["nodes"]}
+    assert f"source-{delete_source_id}" not in node_ids
+    assert "concept-orphan" not in node_ids
+    assert "tag-orphan" not in node_ids
+    assert "concept-shared" in node_ids
+    assert "tag-shared" in node_ids
+    assert not any(
+        f"source-{delete_source_id}" in (edge["source"], edge["target"])
+        for edge in graph["edges"]
+    )
+
+
+def test_delete_source_rejects_missing_processing_and_other_accounts(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    client = _client(tmp_path, monkeypatch)
+
+    from backend import storage
+
+    processing_source = {
+        "id": "processing-source",
+        "account_id": TEST_ACCOUNT_ID,
+        "type": "note",
+        "title": "Processing Memory",
+        "source_url": None,
+        "status": "processing",
+        "error": None,
+        "created_at": "2026-06-20T00:00:00+00:00",
+        "content": "Still processing.",
+    }
+    other_source = {
+        "id": "other-source",
+        "account_id": "other-user",
+        "type": "note",
+        "title": "Other Memory",
+        "source_url": None,
+        "status": "ready",
+        "error": None,
+        "created_at": "2026-06-20T00:00:00+00:00",
+        "content": "Other account content.",
+    }
+    storage.append_source(TEST_ACCOUNT_ID, processing_source)
+    storage.append_source("other-user", other_source)
+    storage.save_posts(
+        "other-user",
+        [
+            {
+                "id": "other-post",
+                "account_id": "other-user",
+                "source_id": "other-source",
+                "source_title": "Other Memory",
+                "body": "Other body",
+                "created_at": "2026-06-20T00:00:00+00:00",
+            }
+        ],
+    )
+
+    missing_response = client.delete("/sources/missing")
+    other_response = client.delete("/sources/other-source")
+    processing_response = client.delete("/sources/processing-source")
+
+    assert missing_response.status_code == 404
+    assert other_response.status_code == 404
+    assert processing_response.status_code == 409
+    assert client.get("/sources/processing-source").status_code == 200
+    assert storage.load_posts("other-user")[0]["id"] == "other-post"
+
+
 def test_account_endpoint_returns_mock_account(tmp_path: Path, monkeypatch) -> None:
     client = _client(tmp_path, monkeypatch)
 

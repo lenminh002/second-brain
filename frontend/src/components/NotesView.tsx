@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BookOpen, FileText, Pencil, Bot } from "lucide-react";
+import { BookOpen, FileText, Pencil, Bot, Trash2 } from "lucide-react";
 
 import { GraphView } from "@/components/GraphView";
 import { SourceContent } from "@/components/SourceContent";
@@ -10,6 +10,14 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Drawer,
   DrawerClose,
   DrawerContent,
@@ -18,7 +26,7 @@ import {
   DrawerTrigger,
 } from "@/components/ui/drawer";
 
-import { updateSourceContent } from "@/lib/api";
+import { deleteSource, updateSourceContent } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { errorMessage, formatDate } from "@/lib/format";
 import type { KnowledgeGraph, NotesMode, SourceDetail, SourceRecord, SourceType } from "@/types";
@@ -52,18 +60,21 @@ export function NotesView({
   selectedSourceId: string | null;
   setNotice: (notice: string) => void;
   setNotesMode: (mode: NotesMode) => void;
-  setSelectedSourceId: (id: string) => void;
-  setSelectedSourceDetail: (source: SourceDetail) => void;
+  setSelectedSourceId: (id: string | null) => void;
+  setSelectedSourceDetail: (source: SourceDetail | null) => void;
   sourcesByType: Record<SourceType, SourceRecord[]>;
   sidebarTab: "chat" | "vault";
   setSidebarTab: (tab: "chat" | "vault") => void;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [draftContent, setDraftContent] = useState("");
 
   const selectedContent = selectedSourceDetail?.content ?? "";
   const canEdit = selectedSourceDetail?.status === "ready";
+  const canDelete = Boolean(selectedSourceDetail && selectedSourceDetail.status !== "processing");
   const saveDisabled = (
     isSaving
     || !draftContent.trim()
@@ -100,6 +111,29 @@ export function NotesView({
       setNotice(errorMessage(error));
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!selectedSourceDetail || isDeleting) return;
+    const sourceId = selectedSourceDetail.id;
+    const remainingSources = (Object.values(sourcesByType).flat() as SourceRecord[])
+      .filter((source) => source.id !== sourceId);
+    const nextSourceId = remainingSources[0]?.id ?? null;
+    setIsDeleting(true);
+    try {
+      await deleteSource(sourceId);
+      setIsDeleteDialogOpen(false);
+      setIsEditing(false);
+      setDraftContent("");
+      setSelectedSourceDetail(null);
+      setSelectedSourceId(nextSourceId);
+      await refreshKnowledge();
+      setNotice("");
+    } catch (error: unknown) {
+      setNotice(errorMessage(error));
+    } finally {
+      setIsDeleting(false);
     }
   }
 
@@ -235,12 +269,28 @@ export function NotesView({
                             {isSaving ? "Saving..." : "Save"}
                           </Button>
                         </>
-                      ) : canEdit ? (
-                        <Button onClick={startEditing} size="sm" type="button" variant="outline">
-                          <Pencil className="h-4 w-4" />
-                          Edit
-                        </Button>
-                      ) : null}
+                      ) : (
+                        <>
+                          {canEdit ? (
+                            <Button onClick={startEditing} size="sm" type="button" variant="outline">
+                              <Pencil className="h-4 w-4" />
+                              Edit
+                            </Button>
+                          ) : null}
+                          {canDelete ? (
+                            <Button
+                              disabled={isDeleting}
+                              onClick={() => setIsDeleteDialogOpen(true)}
+                              size="sm"
+                              type="button"
+                              variant="destructive"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              Delete
+                            </Button>
+                          ) : null}
+                        </>
+                      )}
                     </div>
                   </div>
                   {selectedSourceDetail.error && <p className="text-sm text-destructive break-words">{selectedSourceDetail.error}</p>}
@@ -267,6 +317,32 @@ export function NotesView({
             )}
           </div>
         </div>
+        <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete memory?</DialogTitle>
+              <DialogDescription>
+                This will permanently remove "{selectedSourceDetail?.title}" and delete its generated post from Home.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <DialogClose asChild>
+                <Button disabled={isDeleting} type="button" variant="outline">
+                  Cancel
+                </Button>
+              </DialogClose>
+              <Button
+                disabled={isDeleting}
+                onClick={() => { void confirmDelete(); }}
+                type="button"
+                variant="destructive"
+              >
+                <Trash2 className="h-4 w-4" />
+                {isDeleting ? "Deleting..." : "Delete memory"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </section>
     </main>
   );
